@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
 
 const productCreateSchema = z.object({
   sku: z.string().min(1).max(50),
@@ -71,7 +72,7 @@ export const productsRouter = createTRPCRouter({
 
       const withStock = products.map((p) => ({
         ...p,
-        totalStock: p.locations.reduce((sum, loc) => sum + loc.quantityOnHand, 0),
+        totalStock: p.locations.reduce((sum: number, loc) => sum + loc.quantityOnHand, 0),
       }));
 
       const filtered = lowStock
@@ -137,7 +138,7 @@ export const productsRouter = createTRPCRouter({
           action: 'CREATE',
           entityType: 'Product',
           entityId: product.id,
-          newValues: product as unknown as Record<string, unknown>,
+          newValues: product as unknown as Prisma.InputJsonValue,
           ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
         },
       });
@@ -162,8 +163,8 @@ export const productsRouter = createTRPCRouter({
           action: 'UPDATE',
           entityType: 'Product',
           entityId: updated.id,
-          oldValues: before as unknown as Record<string, unknown>,
-          newValues: updated as unknown as Record<string, unknown>,
+          oldValues: before as unknown as Prisma.InputJsonValue,
+          newValues: updated as unknown as Prisma.InputJsonValue,
           ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
         },
       });

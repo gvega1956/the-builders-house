@@ -6,7 +6,7 @@ const movementCreateSchema = z.object({
   productId: z.string().cuid(),
   locationId: z.string().cuid(),
   movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']),
-  quantity: z.number().int().nonzero(),
+  quantity: z.number().int().refine((n) => n !== 0, 'La cantidad no puede ser cero'),
   referenceType: z.enum(['INVOICE', 'PURCHASE_ORDER', 'ADJUSTMENT', 'TRANSFER', 'DAMAGE_REPORT', 'CYCLE_COUNT']),
   referenceId: z.string().optional(),
   photoUrl: z.string().url().optional(),
