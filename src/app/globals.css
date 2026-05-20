@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/* ─── Brand tokens ─────────────────────────────────────────── */
+:root {
+  --background: #F8FAFC;
+  --foreground: #0F172A;
+
+  /* Navy */
+  --navy-950: #0A1628;
+  --navy-900: #0F1F3A;
+  --navy-800: #1A2D4F;
+  --navy-700: #2A3F66;
+  --navy-600: #3D5580;
+
+  /* Orange */
+  --orange-600: #D9531E;
+  --orange-500: #EC6326;
+  --orange-400: #F47C44;
+  --orange-100: #FDE4D4;
+  --orange-50:  #FEF3EC;
+
+  /* Semantic */
+  --color-success: #059669;
+  --color-warning: #D97706;
+  --color-danger:  #DC2626;
+  --color-info:    #0284C7;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Navy */
+  --color-navy-950: var(--navy-950);
+  --color-navy-900: var(--navy-900);
+  --color-navy-800: var(--navy-800);
+  --color-navy-700: var(--navy-700);
+  --color-navy-600: var(--navy-600);
+
+  /* Orange (marca) */
+  --color-brand-600: var(--orange-600);
+  --color-brand-500: var(--orange-500);
+  --color-brand-400: var(--orange-400);
+  --color-brand-100: var(--orange-100);
+  --color-brand-50:  var(--orange-50);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Scrollbar styling ───────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
