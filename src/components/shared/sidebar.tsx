@@ -84,7 +84,12 @@ export function Sidebar({ user }: { user: SidebarUser }) {
   return (
     <aside
       className="w-64 flex flex-col flex-shrink-0"
-      style={{ backgroundColor: brand.navy[950] }}
+      style={{
+          backgroundColor: 'rgba(10,22,40,0.92)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderRight: '1px solid rgba(255,255,255,0.06)',
+        }}
     >
       {/* Logo */}
       <div

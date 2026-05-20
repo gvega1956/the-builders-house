@@ -2,7 +2,7 @@
 
 /* ─── Brand tokens ─────────────────────────────────────────── */
 :root {
-  --background: #F8FAFC;
+  --background: transparent;
   --foreground: #0F172A;
 
   /* Navy */

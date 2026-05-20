@@ -12,7 +12,6 @@ import {
 import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 
-// Datos estáticos mientras conectamos la BD
 const salesData = [
   { day: 'Lun', ventas: 4200, meta: 5000 },
   { day: 'Mar', ventas: 5800, meta: 5000 },
@@ -38,6 +37,23 @@ const movements = [
   { tipo: 'ajuste', sku: 'VEN-CR-4824-BR', cantidad: -1, usuario: 'Ana T.', tiempo: 'Hace 3h', orden: 'AJ-0042', foto: false, alerta: true },
 ];
 
+// Estilo glass — blanco semi-transparente con blur
+const glass = {
+  backgroundColor: 'rgba(255,255,255,0.72)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255,255,255,0.85)',
+  boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
+} as React.CSSProperties;
+
+const glassAccent = {
+  backgroundColor: 'rgba(255,255,255,0.80)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: `2px solid ${brand.orange[500]}`,
+  boxShadow: `0 4px 24px rgba(236,99,38,0.12)`,
+} as React.CSSProperties;
+
 function KPICard({
   label, value, change, trend, icon: Icon, prefix = '', accent = false,
 }: {
@@ -51,25 +67,19 @@ function KPICard({
 }) {
   return (
     <div
-      className="bg-white rounded-xl p-5 transition-all hover:shadow-md"
-      style={{
-        border: accent ? `2px solid ${brand.orange[500]}` : '1px solid #E2E8F0',
-      }}
+      className="rounded-2xl p-5 transition-all hover:shadow-lg hover:-translate-y-0.5"
+      style={accent ? glassAccent : glass}
     >
       <div className="flex items-start justify-between mb-3">
         <div
-          className="w-9 h-9 rounded-lg flex items-center justify-center"
-          style={{ backgroundColor: accent ? brand.orange[50] : '#F1F5F9' }}
+          className="w-9 h-9 rounded-xl flex items-center justify-center"
+          style={{ backgroundColor: accent ? brand.orange[50] : 'rgba(241,245,249,0.8)' }}
         >
-          <Icon
-            size={17}
-            strokeWidth={2}
-            style={{ color: accent ? brand.orange[500] : '#475569' }}
-          />
+          <Icon size={17} strokeWidth={2} style={{ color: accent ? brand.orange[500] : '#475569' }} />
         </div>
         {change && (
           <span
-            className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-md ${
+            className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg ${
               trend === 'up' ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
             }`}
           >
@@ -78,10 +88,7 @@ function KPICard({
           </span>
         )}
       </div>
-      <div
-        className="text-2xl font-semibold tracking-tight mb-1"
-        style={{ color: brand.navy[950] }}
-      >
+      <div className="text-2xl font-bold tracking-tight mb-1" style={{ color: brand.navy[950] }}>
         {prefix}{value}
       </div>
       <div className="text-xs text-slate-500 font-medium">{label}</div>
@@ -92,12 +99,16 @@ function KPICard({
 export function DashboardClient() {
   return (
     <div className="space-y-6">
-      {/* Encabezado */}
+
+      {/* ── Encabezado ── */}
       <div className="flex items-end justify-between">
         <div>
           <div
-            className="text-[11px] font-semibold tracking-[0.2em] uppercase mb-2"
-            style={{ color: brand.orange[500] }}
+            className="text-[11px] font-bold tracking-[0.25em] uppercase mb-2 px-3 py-1 rounded-full inline-block"
+            style={{
+              color: brand.orange[600],
+              backgroundColor: 'rgba(236,99,38,0.10)',
+            }}
           >
             Martes · 20 Mayo 2026
           </div>
@@ -110,11 +121,14 @@ export function DashboardClient() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">
+          <button
+            className="px-3 py-2 text-sm font-medium rounded-xl transition-all hover:shadow-md"
+            style={{ ...glass, color: brand.navy[800] }}
+          >
             Esta semana <ChevronDown size={13} className="inline ml-1" />
           </button>
           <button
-            className="px-4 py-2 text-sm font-semibold text-white rounded-lg flex items-center gap-1.5 shadow-sm"
+            className="px-4 py-2 text-sm font-bold text-white rounded-xl flex items-center gap-1.5 shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5"
             style={{ backgroundColor: brand.orange[500] }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = brand.orange[600])}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = brand.orange[500])}
@@ -125,7 +139,7 @@ export function DashboardClient() {
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* ── KPIs ── */}
       <div className="grid grid-cols-4 gap-4">
         <KPICard label="Ventas del día" value="8,420" prefix="$" change="+12.4%" trend="up" icon={DollarSign} accent />
         <KPICard label="Unidades vendidas" value="34" change="+8.1%" trend="up" icon={Package} />
@@ -133,10 +147,11 @@ export function DashboardClient() {
         <KPICard label="Margen bruto" value="42.8%" change="+1.2%" trend="up" icon={TrendingUp} />
       </div>
 
-      {/* Gráficas */}
+      {/* ── Gráficas ── */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Área de ventas */}
-        <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
+
+        {/* Área ventas */}
+        <div className="col-span-2 rounded-2xl p-5" style={glass}>
           <div className="flex items-center justify-between mb-5">
             <div>
               <h3 className="text-sm font-semibold" style={{ color: brand.navy[950] }}>
@@ -159,20 +174,21 @@ export function DashboardClient() {
             <AreaChart data={salesData} margin={{ top: 5, right: 5, bottom: 5, left: -10 }}>
               <defs>
                 <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={brand.orange[500]} stopOpacity={0.25} />
+                  <stop offset="0%" stopColor={brand.orange[500]} stopOpacity={0.28} />
                   <stop offset="100%" stopColor={brand.orange[500]} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
               <XAxis dataKey="day" stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'white',
+                  backgroundColor: 'rgba(255,255,255,0.9)',
                   border: '1px solid #E2E8F0',
-                  borderRadius: '8px',
+                  borderRadius: '12px',
                   fontSize: '12px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                  backdropFilter: 'blur(8px)',
                 }}
               />
               <Area type="monotone" dataKey="meta" stroke="#CBD5E1" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
@@ -182,32 +198,40 @@ export function DashboardClient() {
         </div>
 
         {/* Alertas de seguridad */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="rounded-2xl p-5" style={glass}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold" style={{ color: brand.navy[950] }}>
               Seguridad operativa
             </h3>
-            <Shield size={15} style={{ color: brand.orange[500] }} />
+            <div
+              className="w-7 h-7 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: brand.orange[50] }}
+            >
+              <Shield size={14} style={{ color: brand.orange[500] }} />
+            </div>
           </div>
-          <div className="space-y-3">
-            <div className="flex gap-3 p-3 rounded-lg bg-rose-50">
-              <div className="w-1 rounded-full bg-rose-500" />
+          <div className="space-y-2.5">
+            <div className="flex gap-3 p-3 rounded-xl bg-rose-50/80">
+              <div className="w-1 rounded-full bg-rose-500 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-xs font-semibold text-rose-900">Ajuste sin foto</p>
                 <p className="text-[11px] text-rose-700 mt-0.5">VEN-CR-4824-BR · Ana T.</p>
-                <p className="text-[10px] text-rose-500 mt-1">Hace 3h</p>
+                <p className="text-[10px] text-rose-400 mt-1">Hace 3h</p>
               </div>
             </div>
-            <div className="flex gap-3 p-3 rounded-lg" style={{ backgroundColor: brand.orange[50] }}>
-              <div className="w-1 rounded-full" style={{ backgroundColor: brand.orange[500] }} />
+            <div
+              className="flex gap-3 p-3 rounded-xl"
+              style={{ backgroundColor: `${brand.orange[50]}CC` }}
+            >
+              <div className="w-1 rounded-full flex-shrink-0" style={{ backgroundColor: brand.orange[500] }} />
               <div className="flex-1">
                 <p className="text-xs font-semibold" style={{ color: brand.orange[600] }}>Stock crítico</p>
                 <p className="text-[11px] mt-0.5" style={{ color: brand.orange[600] }}>2 SKUs bajo el mínimo</p>
-                <p className="text-[10px] mt-1" style={{ color: brand.orange[500] }}>Hace 4h</p>
+                <p className="text-[10px] mt-1" style={{ color: brand.orange[400] }}>Hace 4h</p>
               </div>
             </div>
-            <div className="flex gap-3 p-3 rounded-lg bg-slate-50">
-              <div className="w-1 rounded-full bg-slate-400" />
+            <div className="flex gap-3 p-3 rounded-xl bg-slate-50/80">
+              <div className="w-1 rounded-full bg-slate-400 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-xs font-semibold text-slate-900">Conteo cíclico</p>
                 <p className="text-[11px] text-slate-600 mt-0.5">5 SKUs asignados hoy</p>
@@ -215,41 +239,42 @@ export function DashboardClient() {
               </div>
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-1.5 text-xs text-emerald-600">
+          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
             <CheckCircle2 size={13} />
             <span>Sistema en línea</span>
           </div>
         </div>
       </div>
 
-      {/* Fila inferior */}
+      {/* ── Fila inferior ── */}
       <div className="grid grid-cols-3 gap-4">
+
         {/* Inventario por categoría */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="rounded-2xl p-5" style={glass}>
           <h3 className="text-sm font-semibold mb-1" style={{ color: brand.navy[950] }}>
             Inventario por categoría
           </h3>
           <p className="text-xs text-slate-500 mb-4">383 unidades totales</p>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={categoryData} layout="vertical" margin={{ top: 0, right: 10, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" horizontal={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
               <XAxis type="number" stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
               <YAxis type="category" dataKey="name" stroke="#475569" fontSize={11} tickLine={false} axisLine={false} width={90} />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'white',
+                  backgroundColor: 'rgba(255,255,255,0.92)',
                   border: '1px solid #E2E8F0',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   fontSize: '12px',
                 }}
               />
-              <Bar dataKey="value" fill={brand.navy[950]} radius={[0, 4, 4, 0]} />
+              <Bar dataKey="value" fill={brand.navy[800]} radius={[0, 6, 6, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* Movimientos recientes */}
-        <div className="col-span-2 bg-white rounded-xl border border-slate-200 p-5">
+        <div className="col-span-2 rounded-2xl p-5" style={glass}>
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-sm font-semibold" style={{ color: brand.navy[950] }}>
@@ -257,7 +282,7 @@ export function DashboardClient() {
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">Auditoría en tiempo real</p>
             </div>
-            <button className="text-xs font-medium hover:underline" style={{ color: brand.orange[500] }}>
+            <button className="text-xs font-semibold hover:underline" style={{ color: brand.orange[500] }}>
               Ver todo →
             </button>
           </div>
@@ -265,15 +290,15 @@ export function DashboardClient() {
             {movements.map((mov, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-slate-50"
-                style={mov.alerta ? { backgroundColor: '#FEF2F2' } : {}}
+                className="flex items-center gap-3 p-2.5 rounded-xl transition-colors hover:bg-white/60"
+                style={mov.alerta ? { backgroundColor: 'rgba(254,242,242,0.7)' } : {}}
               >
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                  className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
                   style={{
                     backgroundColor:
                       mov.tipo === 'entrada' ? '#ECFDF5' :
-                      mov.tipo === 'salida' ? brand.orange[50] : '#FEF2F2',
+                      mov.tipo === 'salida' ? brand.orange[50] : 'rgba(254,242,242,0.8)',
                     color:
                       mov.tipo === 'entrada' ? '#059669' :
                       mov.tipo === 'salida' ? brand.orange[500] : '#DC2626',
@@ -285,12 +310,12 @@ export function DashboardClient() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-semibold" style={{ color: brand.navy[950] }}>
+                    <span className="text-xs font-mono font-bold" style={{ color: brand.navy[950] }}>
                       {mov.sku}
                     </span>
                     <span className="text-xs text-slate-400">·</span>
                     <span className="text-xs text-slate-600 capitalize">{mov.tipo}</span>
-                    <span className="text-xs font-bold" style={{ color: brand.navy[950] }}>
+                    <span className="text-xs font-bold" style={{ color: brand.navy[800] }}>
                       {mov.cantidad > 0 ? '+' : ''}{mov.cantidad}
                     </span>
                   </div>
@@ -300,13 +325,13 @@ export function DashboardClient() {
                     <span className="text-[11px] text-slate-500 font-mono">{mov.orden}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {mov.foto ? (
-                    <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-medium">
+                    <span className="flex items-center gap-1 text-[11px] text-emerald-600 font-semibold">
                       <Camera size={12} />Foto
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-[11px] text-rose-600 font-medium">
+                    <span className="flex items-center gap-1 text-[11px] text-rose-600 font-semibold">
                       <AlertTriangle size={12} />Sin foto
                     </span>
                   )}
