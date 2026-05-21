@@ -3,6 +3,7 @@ import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import type { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
+import { toDecimal } from '@/lib/money';
 
 const invoiceItemSchema = z.object({
   productId: z.string().cuid(),
@@ -95,12 +96,17 @@ export const invoicingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { items, taxRate, ...rest } = input;
 
+      // All arithmetic uses Prisma.Decimal to avoid IEEE-754 rounding errors.
+      // IVU 11.5% in float: 0.115 * 99.99 = 11.498849999... → stored as 11.50 with Decimal.
       const subtotal = items.reduce((sum, item) => {
-        return sum + item.quantity * item.unitPrice * (1 - item.discountPercent / 100);
-      }, 0);
+        const discountFactor = toDecimal(1).sub(toDecimal(item.discountPercent).div(100));
+        const lineTotal = toDecimal(item.unitPrice).mul(item.quantity).mul(discountFactor);
+        return sum.add(lineTotal);
+      }, toDecimal(0));
 
-      const taxAmount = subtotal * taxRate;
-      const total = subtotal + taxAmount;
+      const taxRateDecimal = toDecimal(taxRate);
+      const taxAmount = subtotal.mul(taxRateDecimal);
+      const total = subtotal.add(taxAmount);
 
       const invoice = await ctx.db.$transaction(async (tx) => {
         const invoiceNumber = await getNextSequenceValue(tx, 'INVOICE');
@@ -110,19 +116,22 @@ export const invoicingRouter = createTRPCRouter({
             ...rest,
             invoiceNumber,
             subtotal,
-            taxRate,
+            taxRate: taxRateDecimal,
             taxAmount,
             total,
             createdById: ctx.session!.user!.id!,
             status: 'ISSUED',
             items: {
-              create: items.map((item) => ({
-                productId: item.productId,
-                quantity: item.quantity,
-                unitPrice: item.unitPrice,
-                discountPercent: item.discountPercent,
-                lineTotal: item.quantity * item.unitPrice * (1 - item.discountPercent / 100),
-              })),
+              create: items.map((item) => {
+                const discountFactor = toDecimal(1).sub(toDecimal(item.discountPercent).div(100));
+                return {
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  unitPrice: toDecimal(item.unitPrice),
+                  discountPercent: toDecimal(item.discountPercent),
+                  lineTotal: toDecimal(item.unitPrice).mul(item.quantity).mul(discountFactor),
+                };
+              }),
             },
           },
           include: { items: true },
@@ -161,14 +170,14 @@ export const invoicingRouter = createTRPCRouter({
       if (invoice.status === 'VOIDED')
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Factura anulada' });
 
-      const totalPaid = Number(invoice.paidAmount) + input.amount;
-      const newStatus = totalPaid >= Number(invoice.total) ? 'PAID' : 'PARTIAL';
+      const totalPaid = invoice.paidAmount.add(toDecimal(input.amount));
+      const newStatus = totalPaid.gte(invoice.total) ? 'PAID' : 'PARTIAL';
 
       const [payment] = await ctx.db.$transaction([
         ctx.db.payment.create({
           data: {
             invoiceId: input.invoiceId,
-            amount: input.amount,
+            amount: toDecimal(input.amount),
             method: input.method,
             reference: input.reference,
             notes: input.notes,
