@@ -15,6 +15,8 @@ const movementCreateSchema = z.object({
   gpsLng: z.number().optional(),
 });
 
+type LocationRow = { id: string; productId: string; quantityOnHand: number };
+
 export const movementsRouter = createTRPCRouter({
   list: protectedProcedure
     .input(
@@ -25,7 +27,7 @@ export const movementsRouter = createTRPCRouter({
         from: z.date().optional(),
         to: z.date().optional(),
         page: z.number().int().min(1).default(1),
-        pageSize: z.number().int().min(1).max(100).default(50),
+        pageSize: z.number().int().min(1).max(1000).default(50),
       }).optional()
     )
     .query(async ({ ctx, input }) => {
@@ -69,7 +71,7 @@ export const movementsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { movementType, photoUrl } = input;
 
-      // Validar foto obligatoria para salidas, daños y ajustes
+      // Photo validation — no DB needed, stays outside transaction
       const requiresPhoto = ['OUT', 'DAMAGE', 'ADJUSTMENT'].includes(movementType);
       if (requiresPhoto && !photoUrl) {
         throw new TRPCError({
@@ -78,40 +80,57 @@ export const movementsRouter = createTRPCRouter({
         });
       }
 
-      // Verificar que la location existe y obtener stock actual
-      const location = await ctx.db.productLocation.findUnique({
-        where: { id: input.locationId },
-        include: { product: true },
-      });
+      const movement = await ctx.db.$transaction(async (tx) => {
+        // Pessimistic lock — adquiere lock exclusivo ANTES de leer el stock.
+        // Transacciones concurrentes sobre la misma fila esperan hasta que ésta
+        // haga COMMIT o ROLLBACK (serializa el acceso al stock).
+        const rows = await tx.$queryRaw<LocationRow[]>`
+          SELECT id, "productId", "quantityOnHand"
+          FROM product_locations
+          WHERE id = ${input.locationId}
+          FOR UPDATE
+        `;
 
-      if (!location) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ubicación no encontrada' });
+        if (rows.length === 0) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Ubicación no encontrada' });
+        }
 
-      // Para salidas, verificar stock suficiente
-      const isSalida = ['OUT', 'DAMAGE', 'TRANSFER'].includes(movementType);
-      if (isSalida && location.quantityOnHand < Math.abs(input.quantity)) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Stock insuficiente. Disponible: ${location.quantityOnHand}`,
-        });
-      }
+        const location = rows[0]!;
 
-      // Crear movimiento (APPEND-ONLY — nunca se modifica)
-      const movement = await ctx.db.inventoryMovement.create({
-        data: {
-          ...input,
-          userId: ctx.session!.user!.id!,
-          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
-        },
-      });
+        // Bug 1.4: validate locationId belongs to productId
+        if (location.productId !== input.productId) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'La ubicación no pertenece al producto indicado',
+          });
+        }
 
-      // Actualizar stock en location
-      await ctx.db.productLocation.update({
-        where: { id: input.locationId },
-        data: {
-          quantityOnHand: {
-            increment: input.quantity,
+        // Stock check — seguro: el FOR UPDATE impide que otro UPDATE cambie
+        // quantityOnHand entre este SELECT y el UPDATE siguiente.
+        const isSalida = ['OUT', 'DAMAGE', 'TRANSFER'].includes(movementType);
+        if (isSalida && location.quantityOnHand < Math.abs(input.quantity)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Stock insuficiente. Disponible: ${location.quantityOnHand}`,
+          });
+        }
+
+        // Crear movimiento (APPEND-ONLY — nunca se modifica)
+        const created = await tx.inventoryMovement.create({
+          data: {
+            ...input,
+            userId: ctx.session!.user!.id!,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
           },
-        },
+        });
+
+        // Actualizar stock — atómico dentro de la misma transacción
+        await tx.productLocation.update({
+          where: { id: input.locationId },
+          data: { quantityOnHand: { increment: input.quantity } },
+        });
+
+        return created;
       });
 
       return movement;
