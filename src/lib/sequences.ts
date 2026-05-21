@@ -9,20 +9,23 @@ type SequenceRow = {
 
 /**
  * Incrementa atómicamente la secuencia y devuelve el número formateado.
+ * Debe llamarse SIEMPRE dentro de un $transaction activo.
  *
- * Debe llamarse SIEMPRE dentro de un $transaction activo — nunca con ctx.db directamente.
- * El UPDATE ... RETURNING es atómico en PostgreSQL: bloquea la fila durante la escritura
- * y devuelve el valor ya incrementado en un solo round-trip.
+ * GARANTÍAS:
+ * - Sin duplicados: el UPDATE adquiere lock exclusivo sobre la fila.
+ *   Transacciones concurrentes esperan hasta que la actual libere el lock.
+ * - Sin gaps por rollback: si la transacción hace rollback, el incremento
+ *   se revierte y el siguiente llamado devuelve el mismo número.
+ * - Gaps solo en crash de proceso entre UPDATE y COMMIT (extremadamente raro
+ *   y aceptable).
  *
- * VENTAJA vs SEQUENCE nativa de PostgreSQL: al usar UPDATE en tabla transaccional,
- * los rollbacks también restauran el contador. Ejemplo: si la transacción que
- * creó FAC-00003 hace rollback, el siguiente número será FAC-00003 de nuevo.
+ * TRADEOFF:
+ * Esta implementación serializa transacciones que llamen a la misma secuencia.
+ * Bajo carga muy alta (>1000 tx/s), considerar SEQUENCE nativa de PostgreSQL.
+ * Para los 4-10 usuarios concurrentes del sistema actual, el costo es despreciable.
  *
- * NOTA sobre gaps: pueden ocurrir si el proceso falla DESPUÉS del commit de la
- * secuencia pero ANTES del commit del registro que la usa (crash de red, OOM).
- * Ejemplo válido: FAC-00001, FAC-00003. Los gaps NO deben "corregirse" rellenando
- * huecos — intentarlo introduciría race conditions. Lo único inaceptable serían
- * DUPLICADOS, que están prevenidos por el UPDATE atómico.
+ * NO confundir con SEQUENCE nativa de PostgreSQL, que tiene semántica opuesta
+ * (no bloquea, produce gaps en rollback).
  *
  * @param tx   - cliente de transacción Prisma (el argumento `tx` del callback de $transaction)
  * @param name - nombre de la secuencia: 'INVOICE' | 'PURCHASE_ORDER' | 'CUSTOMER' | 'QUOTE'

@@ -88,17 +88,21 @@ it('5 llamadas concurrentes generan 5 números únicos consecutivos', async () =
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 4: Rollback de transacción NO genera un gap (ventaja vs SEQUENCE nativa)
+// Test 4: Rollback restaura el contador a su valor pre-transacción
 //
-// A diferencia de una SEQUENCE nativa de PostgreSQL (que siempre avanza),
-// nuestra implementación con UPDATE en tabla transaccional SÍ hace rollback
-// del incremento. Esto significa: menos gaps en números de factura.
+// Verifica que un rollback restaura el currentValue.
 //
-// Gaps solo ocurrirían si el proceso falla DESPUÉS del commit de la secuencia
-// pero ANTES del commit de la factura — escenario de crash de red, no de
-// rollback lógico. Documentado en src/lib/sequences.ts (JSDoc).
+// Esto es CORRECTO porque nuestra implementación usa una tabla normal con
+// UPDATE transaccional, no una SEQUENCE nativa. El UPDATE forma parte de
+// la transacción y se revierte con ella.
+//
+// Bajo concurrencia, el lock exclusivo del UPDATE impide que otra
+// transacción lea valores intermedios (ver test #3).
+//
+// Verificado empíricamente con script directo contra la DB:
+//   Antes: 0 → Generado: FAC-00001 → Rollback → Después: 0 → Siguiente: FAC-00001
 // ─────────────────────────────────────────────────────────────────────────────
-it('rollback restaura el contador — NO genera gap (ventaja vs SEQUENCE nativa)', async () => {
+it('rollback restaura contador a su valor pre-transacción', async () => {
   await db.sequence.update({
     where: { name: TEST_SEQUENCE },
     data: { currentValue: 200 },
