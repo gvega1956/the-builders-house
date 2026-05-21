@@ -8,7 +8,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user) redirect('/login');
 
   return (
-    <div className="h-screen flex font-sans antialiased relative">
+    <div className="h-screen flex font-sans antialiased relative overflow-hidden">
       <AnimatedBackground />
       <Sidebar user={session.user} />
       <div className="flex-1 flex flex-col overflow-hidden">
