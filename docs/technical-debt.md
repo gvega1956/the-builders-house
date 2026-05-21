@@ -152,3 +152,40 @@ usando el cast inseguro.
 
 **Plan:** En Sprint 4 (SEG-3), buscar `as { role?: string }` en todo el
 codebase y reemplazar por el tipo real del token JWT. No parchear solo uno.
+
+---
+
+### TD-009 — Seguridad pendiente en settingsRouter (Sprint 4 — prioridad ALTA)
+
+**Severidad:** ALTA
+**Detectado en:** Pausa estructural post-Sprint 2 (revisión de working tree)
+**Archivo:** `src/server/trpc/routers/settings.ts`
+**Sprint propuesto:** Sprint 4 (primer bug a abordar)
+
+**Descripción:** Tres problemas de seguridad identificados y documentados, clasificados
+por el CTO como prioridad #1 del Sprint 4:
+
+**S3 — Password policy insuficiente:**
+`createUser` valida solo `z.string().min(8)`. Sin requisito de complejidad
+(mayúsculas, números, símbolos), sin lista de contraseñas comunes prohibidas
+(ej. "password123"), sin política de no-reutilización.
+Plan: Agregar `z.string().min(8).regex(...)` con requisito de complejidad
+y rechazar passwords en lista de las 1000 más comunes.
+
+**S4 — Sin protección "último admin":**
+`updateUser` permite que un ADMIN cambie su propio rol a MANAGER o se desactive
+(`isActive: false`), dejando el sistema sin ningún ADMIN. Ningún usuario podría
+entonces administrar el sistema.
+Plan: Antes de la actualización, verificar que si el cambio afecta al único
+ADMIN activo, lanzar BAD_REQUEST con mensaje explicativo.
+
+**S5 — `adminProcedure` no encadena `protectedProcedure`:**
+`adminProcedure = t.procedure.use(enforceUserIsAdmin)`. Si en el futuro se
+agrega middleware global a `protectedProcedure` (rate limiting, request logging,
+IP blocking), ese middleware NO se aplicará a rutas admin.
+Plan: Refactorizar a `adminProcedure = protectedProcedure.use(enforceAdminRole)`
+donde `enforceAdminRole` solo verifica el rol (sin duplicar el check de auth).
+
+**Impacto actual:** Bajo — el sistema tiene 4-10 usuarios conocidos en producción.
+**Impacto si se ignora:** Alto — en producción real, S3 permite contraseñas débiles
+y S4 puede dejar el sistema sin administrador.
