@@ -47,6 +47,8 @@ enum InvoiceStatus {
   PAID
   PARTIAL
   VOIDED
+  PENDING_AUTHORIZATION // factura creada por VENDOR con stock insuficiente — requiere aprobación de MANAGER
+  CONVERTED             // QUOTE original después de ser convertida a INVOICE
 }
 
 enum CustomerType {

@@ -1,0 +1,1 @@
+-- Baseline: schema created via prisma db push before migration system was initialized.

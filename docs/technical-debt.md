@@ -33,3 +33,26 @@ Cambios en creditLimit, type, taxId, o cualquier otro campo no quedan registrado
 
 **Plan:** Implementar helper `diffEntities(before, after)` que capture todos
 los campos cambiados. Aplicar en customers.update y otros endpoints similares.
+
+---
+
+### TD-003 — Campo `type` en Invoice es String plano, no enum Prisma
+
+**Severidad:** Baja
+**Detectado en:** Sprint 2 (durante análisis del Bug 2.1)
+**Archivo:** `prisma/schema.prisma > Invoice.type`
+**Sprint propuesto:** Sprint 3
+
+**Descripción:** `Invoice.type` está declarado como `String @default("INVOICE")`
+con un comentario `// INVOICE | QUOTE | CREDIT_NOTE`. No hay enforcement a
+nivel de base de datos ni type-safety en TypeScript más allá de las validaciones
+Zod del router.
+
+**Riesgo concreto:** Una inserción directa a la DB (seed, script de migración,
+CLI de admin) puede escribir cualquier string en `type` sin que Prisma ni
+PostgreSQL lo rechacen. Esto haría que `if (type === 'QUOTE')` en el router
+nunca coincida, sin error visible.
+
+**Plan:** Crear enum `InvoiceType { INVOICE QUOTE CREDIT_NOTE }` en schema.prisma,
+hacer migration `ALTER TABLE invoices ALTER COLUMN type TYPE "InvoiceType" USING type::"InvoiceType"`,
+actualizar Zod schemas y código del router. Requiere aprobación de migración (R8).
