@@ -104,7 +104,7 @@ afterAll(async () => {
   await db.$disconnect();
 });
 
-// ─── Core transaction helper (replicates exact logic from movements.create) ──
+// ─── Core transaction helpers ────────────────────────────────────────────────
 
 type LocationRow = { id: string; productId: string; quantityOnHand: number };
 
@@ -144,6 +144,62 @@ async function deductStock(
     });
 
     return { quantityOnHand: updated.quantityOnHand };
+  });
+}
+
+/**
+ * Full transaction helper: lock + validate + create InventoryMovement + update stock.
+ * quantity follows the sign convention (OUT/DAMAGE → negative, IN/RETURN → positive).
+ */
+async function createMovement({
+  locationId,
+  productId,
+  quantity, // negative for OUT (sign convention from Bug 1.3)
+  userId,
+}: {
+  locationId: string;
+  productId: string;
+  quantity: number;
+  userId: string;
+}): Promise<{ movementId: string; quantityOnHand: number }> {
+  return db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const rows = await tx.$queryRaw<LocationRow[]>`
+      SELECT id, "productId", "quantityOnHand"
+      FROM product_locations
+      WHERE id = ${locationId}
+      FOR UPDATE
+    `;
+
+    if (rows.length === 0) throw new Error('Ubicación no encontrada');
+
+    const loc = rows[0]!;
+
+    if (loc.productId !== productId) {
+      throw new Error('La ubicación no pertenece al producto indicado');
+    }
+
+    // quantity is negative for OUT; check absolute value against stock
+    if (loc.quantityOnHand < Math.abs(quantity)) {
+      throw new Error(`Stock insuficiente. Disponible: ${loc.quantityOnHand}`);
+    }
+
+    const movement = await tx.inventoryMovement.create({
+      data: {
+        productId,
+        locationId,
+        movementType: 'OUT',
+        quantity,
+        referenceType: 'ADJUSTMENT',
+        userId,
+      },
+    });
+
+    const updated = await tx.productLocation.update({
+      where: { id: locationId },
+      data: { quantityOnHand: { increment: quantity } }, // quantity is negative → decrements
+    });
+
+    return { movementId: movement.id, quantityOnHand: updated.quantityOnHand };
   });
 }
 
@@ -214,4 +270,64 @@ it('ubicación inexistente lanza error claro', async () => {
   await expect(
     deductStock('clxxxxxxxxxxxxxxxxxxxxxxxxx', testProductId, 1)
   ).rejects.toThrow('Ubicación no encontrada');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 5: 10 requests concurrentes de 1 unidad con stock=5
+//
+// Con SELECT FOR UPDATE, las 10 transacciones se serializan. Las primeras 5
+// encuentran stock suficiente y hacen commit. Las últimas 5 (en cualquier orden)
+// encuentran stock=0 y son rechazadas.
+//
+// Verifica además que solo 5 registros de InventoryMovement persisten —
+// los de las 5 transacciones fallidas no dejan huella (atomic rollback).
+//
+// Este test refleja carga realista del sistema: múltiples vendedores
+// procesando ventas simultáneas del mismo producto.
+// ─────────────────────────────────────────────────────────────────────────────
+it('10 requests concurrentes de 1 unidad con stock=5: exactamente 5 pasan y 5 fallan', async () => {
+  await db.productLocation.update({
+    where: { id: testLocationId },
+    data: { quantityOnHand: 5 },
+  });
+
+  // Baseline: count existing movements before this test
+  const movementsBefore = await db.inventoryMovement.count({
+    where: { locationId: testLocationId },
+  });
+
+  // 10 truly concurrent transactions — Promise.allSettled dispatches all
+  // before any COMMIT, so each races for the SELECT FOR UPDATE lock
+  const results = await Promise.allSettled(
+    Array.from({ length: 10 }, () =>
+      createMovement({
+        locationId: testLocationId,
+        productId: testProductId,
+        quantity: -1, // OUT: negative per sign convention (Bug 1.3)
+        userId: testUserId,
+      })
+    )
+  );
+
+  const successes = results.filter((r) => r.status === 'fulfilled');
+  const failures = results.filter((r) => r.status === 'rejected');
+
+  expect(successes).toHaveLength(5);
+  expect(failures).toHaveLength(5);
+
+  // All failures are stock-related, not infrastructure errors
+  for (const f of failures) {
+    const msg = ((f as PromiseRejectedResult).reason as Error).message;
+    expect(msg).toContain('Stock insuficiente');
+  }
+
+  // Stock drained to exactly 0 — no negative stock, no phantom units
+  const final = await db.productLocation.findUnique({ where: { id: testLocationId } });
+  expect(final!.quantityOnHand).toBe(0);
+
+  // Only 5 InventoryMovement records created — failed transactions left no trace
+  const movementsAfter = await db.inventoryMovement.count({
+    where: { locationId: testLocationId },
+  });
+  expect(movementsAfter - movementsBefore).toBe(5);
 });
