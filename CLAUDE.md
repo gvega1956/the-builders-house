@@ -242,3 +242,43 @@ Ambos se crean en `$transaction`. Si uno falla, el otro hace rollback. Un `TRANS
 ### Fase 2 — Comercial (semanas 7-10)
 ### Fase 3 — Importación (semanas 11-13)
 ### Fase 4 — Inteligencia (semanas 14-16)
+
+---
+
+## REGLAS DE PROCESO ADQUIRIDAS DURANTE DESARROLLO
+
+Reglas aprendidas de incidentes reales durante el desarrollo. Son no-negociables.
+
+### RP-001 — Working tree limpio es condición de cierre
+
+**Regla:** Al cerrar cualquier bug o sprint, el primer check es siempre `git status`.
+Si el output no es `nothing to commit, working tree clean`, el cierre es **inválido**.
+
+**Razón:** Descubierto en la pausa estructural post-Sprint 2. El Sprint 2 fue declarado
+cerrado con 7 bugs y 85 tests, pero el working tree tenía 3,300+ líneas de código
+sin versionar (UI scaffolding, 2 routers backend, 1 reporte faltante). Código sin
+commit es código que se puede perder. Un sprint "cerrado" con uncommitted work no
+está cerrado.
+
+**Cómo aplicar:** Antes de escribir cualquier mensaje de cierre o reporte final,
+ejecutar `git status` y confirmar output limpio. Si hay archivos sin commit,
+clasificarlos primero (¿pertenecen al bug? ¿son scaffolding? ¿son huérfanos?)
+y committearlos con mensaje apropiado antes de cerrar.
+
+### RP-002 — Revisión de seguridad obligatoria antes de committear código de autenticación
+
+**Regla:** Cualquier código que toque passwords, roles, o creación de usuarios
+requiere revisión explícita de los siguientes puntos antes de commit:
+1. ¿El endpoint está protegido por el procedimiento correcto (`adminProcedure`)?
+2. ¿Se crea un `auditLog` para la operación?
+3. ¿El query de respuesta excluye `passwordHash`?
+4. ¿Hay protección contra el estado "sin administradores"?
+
+**Razón:** Descubierto al revisar `settings.ts` antes de committear. El código
+estaba funcionalmente correcto pero le faltaban `auditLog.create` en `createUser`
+y `updateUser` — violando el Principio P1 (inmutabilidad de auditoría). Los bugs
+de seguridad no se descubren en tests porque los tests no piensan en adversarios.
+
+**Cómo aplicar:** El checklist de 4 puntos se verifica manualmente antes de
+cada commit que toque `src/server/trpc/routers/settings.ts` o cualquier otro
+router que maneje usuarios y autenticación.
