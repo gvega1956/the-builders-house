@@ -152,6 +152,25 @@ export const productsRouter = createTRPCRouter({
       return product;
     }),
 
+  lowStock: protectedProcedure.query(async ({ ctx }) => {
+    return ctx.db.$queryRaw<Array<{
+      id: string;
+      sku: string;
+      name: string;
+      minStock: number;
+      totalStock: number;
+    }>>`
+      SELECT p.id, p.sku, p.name, p."minStock",
+             COALESCE(SUM(pl."quantityOnHand"), 0)::int as "totalStock"
+      FROM products p
+      LEFT JOIN product_locations pl ON pl."productId" = p.id
+      WHERE p."isActive" = true
+      GROUP BY p.id, p.sku, p.name, p."minStock"
+      HAVING COALESCE(SUM(pl."quantityOnHand"), 0) <= p."minStock"
+      ORDER BY "totalStock" ASC
+    `;
+  }),
+
   update: protectedProcedure
     .input(z.object({ id: z.string().cuid(), data: productCreateSchema.partial() }))
     .mutation(async ({ ctx, input }) => {

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
+import { createTRPCRouter, protectedProcedure, adminProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import type { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
@@ -166,6 +166,33 @@ export const customersRouter = createTRPCRouter({
         },
       });
 
+      return updated;
+    }),
+
+  reconcileBalance: adminProcedure
+    .input(z.string().cuid())
+    .mutation(async ({ ctx, input }) => {
+      const result = await ctx.db.$queryRaw<[{ balance: Prisma.Decimal }]>`
+        SELECT COALESCE(SUM(i.total - i."paidAmount"), 0) as balance
+        FROM invoices i
+        WHERE i."customerId" = ${input}
+          AND i.status IN ('ISSUED', 'PARTIAL')
+      `;
+      const newBalance = result[0]!.balance;
+      const updated = await ctx.db.customer.update({
+        where: { id: input },
+        data: { currentBalance: newBalance },
+      });
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'RECONCILE_BALANCE',
+          entityType: 'Customer',
+          entityId: input,
+          newValues: { currentBalance: newBalance?.toString() ?? '0' } as Prisma.InputJsonValue,
+          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+        },
+      });
       return updated;
     }),
 });

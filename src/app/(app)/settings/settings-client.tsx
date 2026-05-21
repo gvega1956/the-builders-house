@@ -4,15 +4,8 @@ import React, { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatDate } from '@/lib/utils';
-import { Plus, X, Users, Tag, Warehouse, Truck, Edit2 } from 'lucide-react';
-
-const glass = {
-  backgroundColor: 'rgba(255,255,255,0.72)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: '1px solid rgba(255,255,255,0.85)',
-  boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
-} as React.CSSProperties;
+import { glass } from '@/lib/ui';
+import { Plus, X, Users, Tag, Warehouse, Truck } from 'lucide-react';
 
 const TABS = [
   { id: 'users', label: 'Usuarios', icon: Users },
@@ -51,10 +44,18 @@ export function SettingsClient() {
   const [supContact, setSupContact] = useState(''); const [supEmail, setSupEmail] = useState('');
   const [supPhone, setSupPhone] = useState(''); const [supTerms, setSupTerms] = useState('');
 
+  // Product Locations
+  const [plWarehouseId, setPlWarehouseId] = useState('');
+  const [plWarehouseName, setPlWarehouseName] = useState('');
+  const [plProductId, setPlProductId] = useState('');
+  const [plCode, setPlCode] = useState('');
+  const [plQty, setPlQty] = useState(0);
+
   const { data: users, refetch: refetchUsers } = trpc.settings.users.useQuery();
   const { data: categories, refetch: refetchCats } = trpc.settings.categories.useQuery();
   const { data: warehouses, refetch: refetchWh } = trpc.settings.warehouses.useQuery();
   const { data: suppliers, refetch: refetchSup } = trpc.settings.suppliers.useQuery();
+  const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });
 
   const createUser = trpc.settings.createUser.useMutation({
     onSuccess: () => { refetchUsers(); closeModal(); },
@@ -75,6 +76,10 @@ export function SettingsClient() {
   const updateUser = trpc.settings.updateUser.useMutation({
     onSuccess: () => { refetchUsers(); },
   });
+  const createProductLoc = trpc.settings.createProductLocation.useMutation({
+    onSuccess: () => { refetchWh(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
 
   function closeModal() {
     setModal(''); setError('');
@@ -82,6 +87,7 @@ export function SettingsClient() {
     setCatName(''); setCatSlug('');
     setWhName(''); setWhAddr('');
     setSupName(''); setSupCountry('DO'); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupTerms('');
+    setPlWarehouseId(''); setPlWarehouseName(''); setPlProductId(''); setPlCode(''); setPlQty(0);
   }
 
   return (
@@ -219,7 +225,7 @@ export function SettingsClient() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
-                {['Nombre', 'Dirección', 'Ubicaciones', 'Estado'].map((h) => (
+                {['Nombre', 'Dirección', 'Ubicaciones', 'Estado', ''].map((h) => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
                 ))}
               </tr>
@@ -233,6 +239,14 @@ export function SettingsClient() {
                   <td className="px-5 py-3">
                     <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
                       style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>Activo</span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => { setPlWarehouseId(w.id); setPlWarehouseName(w.name); setModal('location'); }}
+                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
+                      style={{ color: brand.navy[700] }}>
+                      <Plus size={12} /> Ubicación
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -299,7 +313,7 @@ export function SettingsClient() {
             style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
-                {modal === 'user' ? 'Nuevo Usuario' : modal === 'category' ? 'Nueva Categoría' : modal === 'warehouse' ? 'Nuevo Almacén' : 'Nuevo Proveedor'}
+                {modal === 'user' ? 'Nuevo Usuario' : modal === 'category' ? 'Nueva Categoría' : modal === 'warehouse' ? 'Nuevo Almacén' : modal === 'location' ? 'Agregar Ubicación' : 'Nuevo Proveedor'}
               </h2>
               <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
             </div>
@@ -340,6 +354,39 @@ export function SettingsClient() {
                 <F label="Nombre *"><input value={whName} onChange={(e) => setWhName(e.target.value)} placeholder="Almacén Principal" /></F>
                 <F label="Dirección"><input value={whAddr} onChange={(e) => setWhAddr(e.target.value)} placeholder="Dirección física" /></F>
                 <Btns onCancel={closeModal} onConfirm={() => createWh.mutate({ name: whName, address: whAddr || undefined })} loading={createWh.isPending} label="Crear Almacén" />
+              </div>
+            )}
+
+            {modal === 'location' && (
+              <div className="space-y-3">
+                <div className="text-xs mb-2" style={{ color: '#64748B' }}>
+                  Almacén: <strong style={{ color: brand.navy[800] }}>{plWarehouseName}</strong>
+                </div>
+                <F label="Producto *">
+                  <select value={plProductId} onChange={(e) => setPlProductId(e.target.value)}>
+                    <option value="">Seleccionar producto...</option>
+                    {products?.products.map((p) => (
+                      <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
+                    ))}
+                  </select>
+                </F>
+                <F label="Código de Ubicación *">
+                  <input value={plCode} onChange={(e) => setPlCode(e.target.value)} placeholder="Ej: A-12-03" />
+                </F>
+                <F label="Stock Inicial">
+                  <input type="number" min="0" value={plQty} onChange={(e) => setPlQty(Number(e.target.value))} />
+                </F>
+                <Btns
+                  onCancel={closeModal}
+                  onConfirm={() => createProductLoc.mutate({
+                    warehouseId: plWarehouseId,
+                    productId: plProductId,
+                    locationCode: plCode,
+                    quantityOnHand: plQty,
+                  })}
+                  loading={createProductLoc.isPending}
+                  label="Crear Ubicación"
+                />
               </div>
             )}
 

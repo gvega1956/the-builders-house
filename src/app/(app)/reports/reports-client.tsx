@@ -17,21 +17,13 @@ export function ReportsClient() {
   const { data: salesData } = trpc.dashboard.salesByDay.useQuery({ days: 30 });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
 
-  const { data: invoices } = trpc.invoicing.list.useQuery({ pageSize: 100 });
+  const { data: summary } = trpc.dashboard.reportSummary.useQuery();
+  const { data: lowStockData } = trpc.products.lowStock.useQuery();
   const { data: customers } = trpc.customers.list.useQuery({ pageSize: 200 });
-  const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });
 
-  const totalRevenue = invoices?.invoices
-    .filter((i) => i.status !== 'VOIDED')
-    .reduce((s, i) => s + Number(i.total), 0) ?? 0;
-
-  const totalPaid = invoices?.invoices
-    .filter((i) => i.status !== 'VOIDED')
-    .reduce((s, i) => s + Number(i.paidAmount), 0) ?? 0;
-
-  const pendingBalance = totalRevenue - totalPaid;
-
-  const lowStockProducts = products?.products.filter((p) => p.totalStock <= p.minStock) ?? [];
+  const totalRevenue = summary?.totalRevenue ?? 0;
+  const pendingBalance = summary?.pendingBalance ?? 0;
+  const lowStockProducts = lowStockData ?? [];
 
 
   const kpiCards = [
@@ -39,14 +31,14 @@ export function ReportsClient() {
       icon: DollarSign,
       label: 'Ventas Totales',
       value: formatCurrency(totalRevenue),
-      sub: `${invoices?.total ?? 0} facturas emitidas`,
+      sub: `${summary?.invoicesByStatus.reduce((s, g) => s + g.count, 0) ?? 0} facturas emitidas`,
       color: brand.orange[500],
     },
     {
       icon: TrendingUp,
       label: 'Balance Pendiente',
       value: formatCurrency(pendingBalance),
-      sub: `${invoices?.invoices.filter((i) => i.status === 'PARTIAL' || i.status === 'ISSUED').length ?? 0} facturas abiertas`,
+      sub: `${summary?.invoicesByStatus.filter((g) => g.status === 'PARTIAL' || g.status === 'ISSUED').reduce((s, g) => s + g.count, 0) ?? 0} facturas abiertas`,
       color: pendingBalance > 0 ? '#DC2626' : '#059669',
     },
     {
@@ -177,11 +169,10 @@ export function ReportsClient() {
         {/* Invoice Summary */}
         <div style={glass} className="rounded-2xl p-5">
           <h3 className="text-sm font-bold mb-4" style={{ color: brand.navy[950] }}>Resumen de Facturación</h3>
-          {['ISSUED', 'PARTIAL', 'PAID', 'VOIDED'].map((status) => {
-            const count = invoices?.invoices.filter((i) => i.status === status).length ?? 0;
-            const amount = invoices?.invoices
-              .filter((i) => i.status === status)
-              .reduce((s, i) => s + Number(i.total), 0) ?? 0;
+          {(['ISSUED', 'PARTIAL', 'PAID', 'VOIDED'] as const).map((status) => {
+            const statusData = summary?.invoicesByStatus.find((g) => g.status === status);
+            const count = statusData?.count ?? 0;
+            const amount = statusData?.total ?? 0;
             const labels: Record<string, { label: string; color: string }> = {
               ISSUED: { label: 'Emitidas', color: '#1D4ED8' },
               PARTIAL: { label: 'Pago Parcial', color: '#D97706' },
@@ -208,14 +199,14 @@ export function ReportsClient() {
       {/* Top Customers */}
       <div style={glass} className="rounded-2xl p-5">
         <h3 className="text-sm font-bold mb-4" style={{ color: brand.navy[950] }}>Clientes por Volumen de Compras</h3>
-        {customers && customers.customers.length > 0 ? (
+        {summary?.topCustomers && summary.topCustomers.length > 0 ? (
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={customers.customers.slice(0, 10).map((c) => ({ name: c.name.split(' ')[0], facturas: c._count.invoices }))}>
+            <BarChart data={summary.topCustomers.map((c) => ({ name: c.name.split(' ')[0], ventas: c.totalSales }))}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(10,22,40,0.06)" />
               <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#94A3B8' }} />
-              <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} />
-              <Tooltip />
-              <Bar dataKey="facturas" fill={brand.navy[700]} radius={[4, 4, 0, 0]} />
+              <YAxis tick={{ fontSize: 11, fill: '#94A3B8' }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(v) => [formatCurrency(Number(v)), 'Ventas']} />
+              <Bar dataKey="ventas" fill={brand.navy[700]} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         ) : (

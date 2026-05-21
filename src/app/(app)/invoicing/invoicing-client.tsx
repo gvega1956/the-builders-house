@@ -8,7 +8,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
 import {
   Plus, Search, Receipt, X, ChevronLeft, ChevronRight,
-  Eye, Trash2, DollarSign, ShieldCheck,
+  Eye, Trash2, DollarSign, ShieldCheck, Printer,
 } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -283,6 +283,10 @@ export function InvoicingClient() {
                               <ShieldCheck size={14} style={{ color: brand.orange[500] }} />
                             </button>
                           )}
+                          <a href={`/api/print/invoice/${inv.id}`} target="_blank" rel="noreferrer"
+                            className="p-1.5 rounded-lg hover:bg-slate-100 inline-flex items-center" title="Imprimir PDF">
+                            <Printer size={14} style={{ color: '#64748B' }} />
+                          </a>
                           {inv.status !== 'PAID' && inv.status !== 'VOIDED' && inv.status !== 'CONVERTED' && (
                             <button onClick={() => { setSelectedId(inv.id); setModal('void'); setVoidReason(''); }}
                               className="p-1.5 rounded-lg hover:bg-red-50" title="Anular">

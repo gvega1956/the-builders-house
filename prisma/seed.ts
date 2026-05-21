@@ -126,6 +126,7 @@ async function main() {
     { name: 'PURCHASE_ORDER', prefix: 'OC-RD-', padding: 5 },
     { name: 'CUSTOMER',       prefix: 'CLI-',   padding: 5 },
     { name: 'QUOTE',          prefix: 'COT-',   padding: 5 },
+    { name: 'CREDIT_NOTE',    prefix: 'NC-',    padding: 5 },
   ];
 
   for (const seq of sequenceData) {
@@ -135,7 +136,7 @@ async function main() {
       create: { ...seq, currentValue: 0 },
     });
   }
-  console.log(`✓ ${sequenceData.length} secuencias (INVOICE, PURCHASE_ORDER, CUSTOMER, QUOTE)`);
+  console.log(`✓ ${sequenceData.length} secuencias (INVOICE, PURCHASE_ORDER, CUSTOMER, QUOTE, CREDIT_NOTE)`);
 
   console.log('✅ Seed completado');
 }

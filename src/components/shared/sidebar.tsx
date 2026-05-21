@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Package, ScanLine, Warehouse, Receipt,
   Users, Truck, BarChart3, Shield, Settings, ChevronDown,
+  ShoppingCart, ClipboardCheck,
 } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { brand } from '@/lib/brand';
@@ -106,8 +107,10 @@ export function Sidebar({ user }: { user: SidebarUser }) {
         <NavItem icon={Package} label="Inventario" href="/inventory" badge="383" />
         <NavItem icon={ScanLine} label="Escaneo" href="/scan" />
         <NavItem icon={Warehouse} label="Warehouse" href="/warehouse" />
+        <NavItem icon={ClipboardCheck} label="Conteos Cíclicos" href="/cycle-counts" />
 
         <NavSection label="Comercial" />
+        <NavItem icon={ShoppingCart} label="POS" href="/pos" />
         <NavItem icon={Receipt} label="Facturación" href="/invoicing" />
         <NavItem icon={Users} label="Clientes" href="/customers" />
         <NavItem icon={Truck} label="Compras · RD" href="/purchases" badge="3" />

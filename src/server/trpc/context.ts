@@ -13,3 +13,8 @@ export async function createTRPCContext(opts: { req: NextRequest }) {
 }
 
 export type Context = Awaited<ReturnType<typeof createTRPCContext>>;
+
+export function getClientIp(req: import('next/server').NextRequest): string | undefined {
+  const forwarded = req.headers.get('x-forwarded-for');
+  return forwarded?.split(',')[0]?.trim();
+}

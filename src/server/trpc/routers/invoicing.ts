@@ -196,14 +196,13 @@ export const invoicingRouter = createTRPCRouter({
         dueDate: z.date().optional(),
         notes: z.string().optional(),
       }).superRefine(({ type, items }, ctx) => {
-        // locationId is required for INVOICE items; QUOTE skips location selection
-        if (type === 'INVOICE') {
+        if (type === 'INVOICE' || type === 'CREDIT_NOTE') {
           items.forEach((item, i) => {
             if (!item.locationId) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ['items', i, 'locationId'],
-                message: 'locationId es requerido para facturas de tipo INVOICE',
+                message: `locationId es requerido para documentos de tipo ${type}`,
               });
             }
           });
@@ -217,11 +216,75 @@ export const invoicingRouter = createTRPCRouter({
         taxRate,
       );
 
-      // ── CREDIT_NOTE: pendiente de implementación (ver TD-005) ──────────────
+      // ── CREDIT_NOTE: nota de crédito — reversa de inventario y balance ─────
       if (type === 'CREDIT_NOTE') {
-        throw new TRPCError({
-          code: 'METHOD_NOT_SUPPORTED',
-          message: 'CREDIT_NOTE no implementado — ver TD-005 en docs/technical-debt.md',
+        return ctx.db.$transaction(async (tx) => {
+          const invoiceNumber = await getNextSequenceValue(tx, 'CREDIT_NOTE');
+          const invoiceItemsData = itemsData.map((d, idx) => ({
+            ...d,
+            locationId: items[idx]!.locationId,
+          }));
+
+          const created = await tx.invoice.create({
+            data: {
+              ...rest,
+              type,
+              invoiceNumber,
+              subtotal,
+              taxRate: taxRateDecimal,
+              taxAmount,
+              total,
+              createdById: ctx.session!.user!.id!,
+              status: 'ISSUED',
+              items: { create: invoiceItemsData },
+            },
+            include: { items: true },
+          });
+
+          for (const item of items) {
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                locationId: item.locationId!,
+                movementType: 'RETURN',
+                quantity: item.quantity,
+                referenceType: 'INVOICE',
+                referenceId: invoiceNumber,
+                userId: ctx.session!.user!.id!,
+                ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+              },
+            });
+            await tx.productLocation.update({
+              where: { id: item.locationId! },
+              data: { quantityOnHand: { increment: item.quantity } },
+            });
+          }
+
+          await tx.customer.update({
+            where: { id: input.customerId },
+            data: { currentBalance: { decrement: total } },
+          });
+
+          const auditValues: Record<string, unknown> = {
+            invoiceNumber,
+            type: 'CREDIT_NOTE',
+            total: total.toString(),
+            itemCount: items.length,
+          };
+          if (belowCostItems.length > 0) auditValues.belowCostItems = belowCostItems;
+
+          await tx.auditLog.create({
+            data: {
+              userId: ctx.session!.user!.id!,
+              action: 'CREATE_CREDIT_NOTE',
+              entityType: 'Invoice',
+              entityId: created.id,
+              newValues: auditValues as Prisma.InputJsonValue,
+              ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+            },
+          });
+
+          return created;
         });
       }
 
