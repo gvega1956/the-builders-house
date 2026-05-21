@@ -37,7 +37,7 @@ const movements = [
   { tipo: 'ajuste', sku: 'VEN-CR-4824-BR', cantidad: -1, usuario: 'Ana T.', tiempo: 'Hace 3h', orden: 'AJ-0042', foto: false, alerta: true },
 ];
 
-// Estilo glass — blanco semi-transparente con blur
+// Estilo glass para charts y tablas
 const glass = {
   backgroundColor: 'rgba(255,255,255,0.72)',
   backdropFilter: 'blur(16px)',
@@ -46,12 +46,31 @@ const glass = {
   boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
 } as React.CSSProperties;
 
-const glassAccent = {
-  backgroundColor: 'rgba(255,255,255,0.80)',
+// KPI cards — tintadas, borde con relieve, proporcionadas
+const kpiBase = {
+  background: 'linear-gradient(160deg, rgba(255,255,255,0.88) 0%, rgba(241,245,252,0.82) 100%)',
   backdropFilter: 'blur(16px)',
   WebkitBackdropFilter: 'blur(16px)',
-  border: `2px solid ${brand.orange[500]}`,
-  boxShadow: `0 4px 24px rgba(236,99,38,0.12)`,
+  border: '1.5px solid rgba(255,255,255,0.95)',
+  boxShadow: [
+    '0 2px 0 rgba(255,255,255,1) inset',
+    '0 12px 28px rgba(10,22,40,0.10)',
+    '0 2px 6px rgba(10,22,40,0.06)',
+    '4px 4px 12px rgba(10,22,40,0.06)',
+  ].join(', '),
+} as React.CSSProperties;
+
+const kpiAccent = {
+  background: 'linear-gradient(160deg, rgba(255,240,230,0.95) 0%, rgba(254,228,212,0.88) 100%)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: `1.5px solid rgba(236,99,38,0.35)`,
+  boxShadow: [
+    '0 2px 0 rgba(255,255,255,0.90) inset',
+    `0 12px 28px rgba(236,99,38,0.16)`,
+    `0 2px 6px rgba(236,99,38,0.10)`,
+    '4px 4px 12px rgba(10,22,40,0.06)',
+  ].join(', '),
 } as React.CSSProperties;
 
 function KPICard({
@@ -67,20 +86,26 @@ function KPICard({
 }) {
   return (
     <div
-      className="rounded-2xl p-5 transition-all hover:shadow-lg hover:-translate-y-0.5"
-      style={accent ? glassAccent : glass}
+      className="rounded-2xl p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-default"
+      style={accent ? kpiAccent : kpiBase}
     >
       <div className="flex items-start justify-between mb-3">
         <div
           className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ backgroundColor: accent ? brand.orange[50] : 'rgba(241,245,249,0.8)' }}
+          style={{
+            backgroundColor: accent ? `rgba(236,99,38,0.12)` : `rgba(10,22,40,0.07)`,
+          }}
         >
-          <Icon size={17} strokeWidth={2} style={{ color: accent ? brand.orange[500] : '#475569' }} />
+          <Icon
+            size={17}
+            strokeWidth={2}
+            style={{ color: accent ? brand.orange[500] : brand.navy[700] }}
+          />
         </div>
         {change && (
           <span
             className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg ${
-              trend === 'up' ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'
+              trend === 'up' ? 'text-emerald-700 bg-emerald-50' : 'text-rose-600 bg-rose-50'
             }`}
           >
             {trend === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
@@ -88,10 +113,13 @@ function KPICard({
           </span>
         )}
       </div>
-      <div className="text-2xl font-bold tracking-tight mb-1" style={{ color: brand.navy[950] }}>
+      <div
+        className="text-2xl font-bold tracking-tight mb-1"
+        style={{ color: accent ? brand.orange[600] : brand.navy[950] }}
+      >
         {prefix}{value}
       </div>
-      <div className="text-xs text-slate-500 font-medium">{label}</div>
+      <div className="text-xs font-medium text-slate-500">{label}</div>
     </div>
   );
 }

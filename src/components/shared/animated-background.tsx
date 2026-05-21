@@ -2,136 +2,129 @@
 
 export function AnimatedBackground() {
   return (
-    <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none" aria-hidden>
-      {/* Base gradient — azul cielo muy suave */}
+    <>
+      {/* Base gradient pegada al layout, no fixed */}
       <div
-        className="absolute inset-0"
+        className="absolute inset-0 -z-10"
         style={{
-          background:
-            'linear-gradient(135deg, #EEF4FF 0%, #F0F7FF 30%, #FEF6EE 70%, #FFF8F0 100%)',
+          background: 'linear-gradient(145deg, #EDF2FF 0%, #F5F0FF 25%, #FFF0E8 60%, #FFF7F0 100%)',
         }}
       />
 
-      {/* Blob 1 — naranja suave, arriba derecha */}
+      {/* ── BLOB 1 — naranja fuerte, arriba derecha ── */}
       <div
-        className="blob absolute rounded-full"
+        className="absolute -z-10 rounded-full"
         style={{
-          width: 520,
-          height: 520,
-          top: '-120px',
-          right: '-80px',
-          background:
-            'radial-gradient(circle, rgba(236,99,38,0.18) 0%, rgba(244,124,68,0.08) 60%, transparent 80%)',
-          animation: 'float1 18s ease-in-out infinite',
+          width: 560,
+          height: 560,
+          top: -180,
+          right: -120,
+          background: 'radial-gradient(circle at 40% 40%, rgba(236,99,38,0.38) 0%, rgba(244,124,68,0.22) 40%, transparent 70%)',
+          filter: 'blur(48px)',
+          animation: 'blob1 16s ease-in-out infinite',
         }}
       />
 
-      {/* Blob 2 — navy suave, abajo izquierda */}
+      {/* ── BLOB 2 — navy, abajo izquierda ── */}
       <div
-        className="blob absolute rounded-full"
+        className="absolute -z-10 rounded-full"
         style={{
-          width: 600,
-          height: 600,
-          bottom: '-160px',
-          left: '-100px',
-          background:
-            'radial-gradient(circle, rgba(42,63,102,0.12) 0%, rgba(26,45,79,0.06) 60%, transparent 80%)',
-          animation: 'float2 22s ease-in-out infinite',
+          width: 640,
+          height: 640,
+          bottom: -200,
+          left: -160,
+          background: 'radial-gradient(circle at 55% 55%, rgba(26,45,79,0.28) 0%, rgba(42,63,102,0.16) 45%, transparent 70%)',
+          filter: 'blur(56px)',
+          animation: 'blob2 20s ease-in-out infinite',
         }}
       />
 
-      {/* Blob 3 — naranja claro, centro */}
+      {/* ── BLOB 3 — naranja claro, centro izquierda ── */}
       <div
-        className="blob absolute rounded-full"
+        className="absolute -z-10 rounded-full"
+        style={{
+          width: 440,
+          height: 440,
+          top: '28%',
+          left: '18%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(253,228,212,0.80) 0%, rgba(236,99,38,0.18) 50%, transparent 72%)',
+          filter: 'blur(36px)',
+          animation: 'blob3 13s ease-in-out infinite',
+        }}
+      />
+
+      {/* ── BLOB 4 — lila/azul, arriba centro ── */}
+      <div
+        className="absolute -z-10 rounded-full"
         style={{
           width: 380,
           height: 380,
-          top: '35%',
-          left: '40%',
-          background:
-            'radial-gradient(circle, rgba(253,228,212,0.55) 0%, rgba(254,243,236,0.25) 60%, transparent 80%)',
-          animation: 'float3 14s ease-in-out infinite',
+          top: -60,
+          left: '38%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(168,148,255,0.22) 0%, rgba(139,120,240,0.12) 50%, transparent 72%)',
+          filter: 'blur(40px)',
+          animation: 'blob4 22s ease-in-out infinite',
         }}
       />
 
-      {/* Blob 4 — azul muy suave, centro derecha */}
+      {/* ── BLOB 5 — naranja, abajo derecha ── */}
       <div
-        className="blob absolute rounded-full"
+        className="absolute -z-10 rounded-full"
+        style={{
+          width: 480,
+          height: 480,
+          bottom: -100,
+          right: '8%',
+          background: 'radial-gradient(circle at 45% 45%, rgba(236,99,38,0.24) 0%, rgba(244,124,68,0.12) 50%, transparent 70%)',
+          filter: 'blur(44px)',
+          animation: 'blob5 18s ease-in-out infinite',
+        }}
+      />
+
+      {/* ── BLOB 6 — azul cielo, centro derecha ── */}
+      <div
+        className="absolute -z-10 rounded-full"
         style={{
           width: 300,
           height: 300,
-          top: '20%',
-          right: '20%',
-          background:
-            'radial-gradient(circle, rgba(61,85,128,0.09) 0%, transparent 70%)',
-          animation: 'float4 25s ease-in-out infinite',
-        }}
-      />
-
-      {/* Blob 5 — naranja muy suave, abajo derecha */}
-      <div
-        className="blob absolute rounded-full"
-        style={{
-          width: 420,
-          height: 420,
-          bottom: '5%',
-          right: '10%',
-          background:
-            'radial-gradient(circle, rgba(236,99,38,0.10) 0%, rgba(244,124,68,0.04) 60%, transparent 80%)',
-          animation: 'float5 20s ease-in-out infinite',
-        }}
-      />
-
-      {/* Blob 6 — pequeño acento navy, arriba centro */}
-      <div
-        className="blob absolute rounded-full"
-        style={{
-          width: 200,
-          height: 200,
-          top: '8%',
-          left: '35%',
-          background:
-            'radial-gradient(circle, rgba(15,31,58,0.07) 0%, transparent 70%)',
-          animation: 'float6 16s ease-in-out infinite',
+          top: '42%',
+          right: '22%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(56,132,255,0.16) 0%, rgba(96,165,250,0.08) 55%, transparent 72%)',
+          filter: 'blur(32px)',
+          animation: 'blob6 15s ease-in-out infinite',
         }}
       />
 
       <style>{`
-        @keyframes float1 {
-          0%   { transform: translate(0px, 0px) scale(1); }
-          33%  { transform: translate(-30px, 25px) scale(1.05); }
-          66%  { transform: translate(20px, -20px) scale(0.97); }
-          100% { transform: translate(0px, 0px) scale(1); }
+        @keyframes blob1 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          33%      { transform: translate(-40px, 35px) scale(1.08); }
+          66%      { transform: translate(25px,-20px) scale(0.94); }
         }
-        @keyframes float2 {
-          0%   { transform: translate(0px, 0px) scale(1); }
-          33%  { transform: translate(40px, -30px) scale(1.04); }
-          66%  { transform: translate(-25px, 20px) scale(0.96); }
-          100% { transform: translate(0px, 0px) scale(1); }
+        @keyframes blob2 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          33%      { transform: translate(50px,-40px) scale(1.06); }
+          66%      { transform: translate(-30px, 25px) scale(0.95); }
         }
-        @keyframes float3 {
-          0%   { transform: translate(0px, 0px) scale(1); }
-          50%  { transform: translate(-20px, 30px) scale(1.06); }
-          100% { transform: translate(0px, 0px) scale(1); }
+        @keyframes blob3 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          50%      { transform: translate(30px, 40px) scale(1.10); }
         }
-        @keyframes float4 {
-          0%   { transform: translate(0px, 0px) scale(1); }
-          40%  { transform: translate(25px, 20px) scale(1.03); }
-          80%  { transform: translate(-15px, -10px) scale(0.98); }
-          100% { transform: translate(0px, 0px) scale(1); }
+        @keyframes blob4 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          40%      { transform: translate(35px, 25px) scale(1.05); }
+          80%      { transform: translate(-20px,-15px) scale(0.96); }
         }
-        @keyframes float5 {
-          0%   { transform: translate(0px, 0px) scale(1); }
-          33%  { transform: translate(-35px, -20px) scale(1.05); }
-          66%  { transform: translate(20px, 15px) scale(0.97); }
-          100% { transform: translate(0px, 0px) scale(1); }
+        @keyframes blob5 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          33%      { transform: translate(-30px,-25px) scale(1.07); }
+          66%      { transform: translate(20px, 18px) scale(0.96); }
         }
-        @keyframes float6 {
-          0%   { transform: translate(0px, 0px) scale(1); }
-          50%  { transform: translate(30px, -15px) scale(1.08); }
-          100% { transform: translate(0px, 0px) scale(1); }
+        @keyframes blob6 {
+          0%,100% { transform: translate(0,0) scale(1); }
+          50%      { transform: translate(-25px, 20px) scale(1.12); }
         }
       `}</style>
-    </div>
+    </>
   );
 }

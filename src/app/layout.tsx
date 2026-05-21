@@ -27,6 +27,7 @@ export default function RootLayout({
     <html
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      style={{ background: 'transparent' }}
     >
       <body className="h-full">
         <TRPCProviders>{children}</TRPCProviders>

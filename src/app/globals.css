@@ -47,11 +47,12 @@
   --color-brand-50:  var(--orange-50);
 }
 
-body {
-  background: var(--background);
+html, body {
+  background: transparent;
   color: var(--foreground);
   font-family: var(--font-sans), -apple-system, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  height: 100%;
 }
 
 /* ─── Scrollbar styling ───────────────────────────────────── */

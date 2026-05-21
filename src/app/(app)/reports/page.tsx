@@ -1,10 +1,7 @@
-export const metadata = { title: 'Reports — The Builder\'s House' };
+import { ReportsClient } from './reports-client';
 
-export default function Page() {
-  return (
-    <div>
-      <h1 className="text-2xl font-semibold text-slate-900 mb-1">Reports</h1>
-      <p className="text-sm text-slate-500">En desarrollo</p>
-    </div>
-  );
+export const metadata = { title: 'Reportes — The Builder\'s House' };
+
+export default function ReportsPage() {
+  return <ReportsClient />;
 }

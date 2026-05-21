@@ -1,0 +1,401 @@
+'use client';
+
+import React, { useState } from 'react';
+import { trpc } from '@/lib/trpc';
+import { brand } from '@/lib/brand';
+import { formatDate } from '@/lib/utils';
+import { Plus, X, Users, Tag, Warehouse, Truck, Edit2 } from 'lucide-react';
+
+const glass = {
+  backgroundColor: 'rgba(255,255,255,0.72)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255,255,255,0.85)',
+  boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
+} as React.CSSProperties;
+
+const TABS = [
+  { id: 'users', label: 'Usuarios', icon: Users },
+  { id: 'categories', label: 'Categorías', icon: Tag },
+  { id: 'warehouses', label: 'Almacenes', icon: Warehouse },
+  { id: 'suppliers', label: 'Proveedores', icon: Truck },
+] as const;
+
+type Tab = typeof TABS[number]['id'];
+
+const ROLES: Record<string, string> = {
+  ADMIN: 'Administrador',
+  MANAGER: 'Gerente',
+  VENDOR: 'Vendedor',
+  WAREHOUSE: 'Almacén',
+  VIEWER: 'Visor',
+};
+
+export function SettingsClient() {
+  const [tab, setTab] = useState<Tab>('users');
+  const [modal, setModal] = useState('');
+  const [error, setError] = useState('');
+
+  // Users
+  const [uName, setUName] = useState(''); const [uEmail, setUEmail] = useState('');
+  const [uPass, setUPass] = useState(''); const [uRole, setURole] = useState('VENDOR');
+
+  // Categories
+  const [catName, setCatName] = useState(''); const [catSlug, setCatSlug] = useState('');
+
+  // Warehouses
+  const [whName, setWhName] = useState(''); const [whAddr, setWhAddr] = useState('');
+
+  // Suppliers
+  const [supName, setSupName] = useState(''); const [supCountry, setSupCountry] = useState('DO');
+  const [supContact, setSupContact] = useState(''); const [supEmail, setSupEmail] = useState('');
+  const [supPhone, setSupPhone] = useState(''); const [supTerms, setSupTerms] = useState('');
+
+  const { data: users, refetch: refetchUsers } = trpc.settings.users.useQuery();
+  const { data: categories, refetch: refetchCats } = trpc.settings.categories.useQuery();
+  const { data: warehouses, refetch: refetchWh } = trpc.settings.warehouses.useQuery();
+  const { data: suppliers, refetch: refetchSup } = trpc.settings.suppliers.useQuery();
+
+  const createUser = trpc.settings.createUser.useMutation({
+    onSuccess: () => { refetchUsers(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+  const createCat = trpc.settings.createCategory.useMutation({
+    onSuccess: () => { refetchCats(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+  const createWh = trpc.settings.createWarehouse.useMutation({
+    onSuccess: () => { refetchWh(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+  const createSup = trpc.settings.createSupplier.useMutation({
+    onSuccess: () => { refetchSup(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+  const updateUser = trpc.settings.updateUser.useMutation({
+    onSuccess: () => { refetchUsers(); },
+  });
+
+  function closeModal() {
+    setModal(''); setError('');
+    setUName(''); setUEmail(''); setUPass(''); setURole('VENDOR');
+    setCatName(''); setCatSlug('');
+    setWhName(''); setWhAddr('');
+    setSupName(''); setSupCountry('DO'); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupTerms('');
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold" style={{ color: brand.navy[950] }}>Configuración</h1>
+        <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>Gestión de usuarios, categorías, almacenes y proveedores</p>
+      </div>
+
+      {/* Tabs */}
+      <div style={glass} className="rounded-2xl p-1.5 flex gap-1">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all flex-1 justify-center"
+            style={tab === t.id
+              ? { backgroundColor: brand.orange[500], color: '#FFFFFF' }
+              : { color: '#64748B' }
+            }
+          >
+            <t.icon size={15} />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── USERS ── */}
+      {tab === 'users' && (
+        <div style={glass} className="rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+            <span className="font-semibold text-sm" style={{ color: brand.navy[950] }}>
+              {users?.length ?? 0} usuarios
+            </span>
+            <button onClick={() => setModal('user')}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl text-white"
+              style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+              <Plus size={14} /> Nuevo Usuario
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                {['Nombre', 'Email', 'Rol', 'Estado', 'Último Login', ''].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {users?.map((u, i) => (
+                <tr key={u.id} style={{
+                  borderBottom: i < (users.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none',
+                  backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
+                }}>
+                  <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{u.name}</td>
+                  <td className="px-5 py-3 text-slate-500">{u.email}</td>
+                  <td className="px-5 py-3">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: u.role === 'ADMIN' ? brand.orange[50] : '#F1F5F9', color: u.role === 'ADMIN' ? brand.orange[600] : '#475569' }}>
+                      {ROLES[u.role] ?? u.role}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: u.isActive ? '#F0FDF4' : '#FEF2F2', color: u.isActive ? '#166534' : '#991B1B' }}>
+                      {u.isActive ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-slate-400 text-xs">
+                    {u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Nunca'}
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => updateUser.mutate({ id: u.id, data: { isActive: !u.isActive } })}
+                      className="text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
+                      style={{ color: '#64748B' }}>
+                      {u.isActive ? 'Desactivar' : 'Activar'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── CATEGORIES ── */}
+      {tab === 'categories' && (
+        <div style={glass} className="rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+            <span className="font-semibold text-sm" style={{ color: brand.navy[950] }}>
+              {categories?.length ?? 0} categorías
+            </span>
+            <button onClick={() => setModal('category')}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl text-white"
+              style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+              <Plus size={14} /> Nueva Categoría
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                {['Nombre', 'Slug', 'Productos', 'Creada'].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {categories?.map((c, i) => (
+                <tr key={c.id} style={{ borderBottom: i < (categories.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none' }}>
+                  <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{c.name}</td>
+                  <td className="px-5 py-3 font-mono text-xs text-slate-400">{c.slug}</td>
+                  <td className="px-5 py-3" style={{ color: brand.navy[800] }}>{c._count.products}</td>
+                  <td className="px-5 py-3 text-slate-400 text-xs">{formatDate(c.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── WAREHOUSES ── */}
+      {tab === 'warehouses' && (
+        <div style={glass} className="rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+            <span className="font-semibold text-sm" style={{ color: brand.navy[950] }}>
+              {warehouses?.length ?? 0} almacenes
+            </span>
+            <button onClick={() => setModal('warehouse')}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl text-white"
+              style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+              <Plus size={14} /> Nuevo Almacén
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                {['Nombre', 'Dirección', 'Ubicaciones', 'Estado'].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {warehouses?.map((w, i) => (
+                <tr key={w.id} style={{ borderBottom: i < (warehouses.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none' }}>
+                  <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{w.name}</td>
+                  <td className="px-5 py-3 text-slate-500">{w.address ?? '—'}</td>
+                  <td className="px-5 py-3" style={{ color: brand.navy[800] }}>{w._count.locations}</td>
+                  <td className="px-5 py-3">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>Activo</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── SUPPLIERS ── */}
+      {tab === 'suppliers' && (
+        <div style={glass} className="rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+            <span className="font-semibold text-sm" style={{ color: brand.navy[950] }}>
+              {suppliers?.length ?? 0} proveedores
+            </span>
+            <button onClick={() => setModal('supplier')}
+              className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-xl text-white"
+              style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+              <Plus size={14} /> Nuevo Proveedor
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                {['Proveedor', 'País', 'Contacto', 'Productos', 'OC', 'Estado'].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers?.map((s, i) => (
+                <tr key={s.id} style={{ borderBottom: i < (suppliers.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none' }}>
+                  <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>
+                    {s.name}
+                    {s.contactEmail && <div className="text-xs text-slate-400">{s.contactEmail}</div>}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: s.country === 'DO' ? '#FEF9C3' : '#EFF6FF', color: s.country === 'DO' ? '#854D0E' : '#1D4ED8' }}>
+                      {s.country}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-slate-500">{s.contactName ?? '—'}</td>
+                  <td className="px-5 py-3" style={{ color: brand.navy[800] }}>{s._count.products}</td>
+                  <td className="px-5 py-3" style={{ color: brand.navy[800] }}>{s._count.purchaseOrders}</td>
+                  <td className="px-5 py-3">
+                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                      style={{ backgroundColor: s.isActive ? '#F0FDF4' : '#FEF2F2', color: s.isActive ? '#166534' : '#991B1B' }}>
+                      {s.isActive ? 'Activo' : 'Inactivo'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Modals ── */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-md mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
+                {modal === 'user' ? 'Nuevo Usuario' : modal === 'category' ? 'Nueva Categoría' : modal === 'warehouse' ? 'Nuevo Almacén' : 'Nuevo Proveedor'}
+              </h2>
+              <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
+            </div>
+            {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+
+            {modal === 'user' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={uName} onChange={(e) => setUName(e.target.value)} placeholder="Nombre completo" /></F>
+                <F label="Email *"><input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} placeholder="usuario@buildershouse.pr" /></F>
+                <F label="Contraseña *"><input type="password" value={uPass} onChange={(e) => setUPass(e.target.value)} placeholder="Mínimo 8 caracteres" /></F>
+                <F label="Rol">
+                  <select value={uRole} onChange={(e) => setURole(e.target.value)}>
+                    {Object.entries(ROLES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </F>
+                <Btns
+                  onCancel={closeModal}
+                  onConfirm={() => createUser.mutate({ name: uName, email: uEmail, password: uPass, role: uRole as 'ADMIN' | 'MANAGER' | 'VENDOR' | 'WAREHOUSE' | 'VIEWER' })}
+                  loading={createUser.isPending}
+                  label="Crear Usuario"
+                />
+              </div>
+            )}
+
+            {modal === 'category' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={catName} onChange={(e) => {
+                  setCatName(e.target.value);
+                  setCatSlug(e.target.value.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''));
+                }} placeholder="Ej: Ventanas Corredizas" /></F>
+                <F label="Slug"><input value={catSlug} onChange={(e) => setCatSlug(e.target.value)} placeholder="ventanas-corredizas" /></F>
+                <Btns onCancel={closeModal} onConfirm={() => createCat.mutate({ name: catName, slug: catSlug })} loading={createCat.isPending} label="Crear Categoría" />
+              </div>
+            )}
+
+            {modal === 'warehouse' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={whName} onChange={(e) => setWhName(e.target.value)} placeholder="Almacén Principal" /></F>
+                <F label="Dirección"><input value={whAddr} onChange={(e) => setWhAddr(e.target.value)} placeholder="Dirección física" /></F>
+                <Btns onCancel={closeModal} onConfirm={() => createWh.mutate({ name: whName, address: whAddr || undefined })} loading={createWh.isPending} label="Crear Almacén" />
+              </div>
+            )}
+
+            {modal === 'supplier' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={supName} onChange={(e) => setSupName(e.target.value)} placeholder="Nombre del proveedor" /></F>
+                <F label="País">
+                  <select value={supCountry} onChange={(e) => setSupCountry(e.target.value)}>
+                    <option value="DO">República Dominicana</option>
+                    <option value="PR">Puerto Rico</option>
+                    <option value="US">Estados Unidos</option>
+                  </select>
+                </F>
+                <F label="Nombre del Contacto"><input value={supContact} onChange={(e) => setSupContact(e.target.value)} placeholder="Nombre" /></F>
+                <F label="Email Contacto"><input type="email" value={supEmail} onChange={(e) => setSupEmail(e.target.value)} placeholder="contacto@proveedor.com" /></F>
+                <F label="Teléfono"><input value={supPhone} onChange={(e) => setSupPhone(e.target.value)} placeholder="+1 (809) 000-0000" /></F>
+                <F label="Términos de Pago"><input value={supTerms} onChange={(e) => setSupTerms(e.target.value)} placeholder="Net 30, 50% adelanto..." /></F>
+                <Btns onCancel={closeModal} onConfirm={() => createSup.mutate({
+                  name: supName, country: supCountry as 'DO' | 'PR' | 'US',
+                  contactName: supContact || undefined, contactEmail: supEmail || undefined,
+                  contactPhone: supPhone || undefined, paymentTerms: supTerms || undefined,
+                })} loading={createSup.isPending} label="Crear Proveedor" />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function F({ label, children }: { label: string; children: React.ReactElement<React.HTMLAttributes<HTMLElement>> }) {
+  return (
+    <div>
+      <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>{label}</label>
+      {React.cloneElement(children, {
+        className: 'w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none',
+        style: { color: brand.navy[900] },
+      })}
+    </div>
+  );
+}
+
+
+function Btns({ onCancel, onConfirm, loading, label }: {
+  onCancel: () => void; onConfirm: () => void; loading: boolean; label: string;
+}) {
+  return (
+    <div className="flex gap-3 pt-2">
+      <button onClick={onCancel} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+      <button onClick={onConfirm} disabled={loading}
+        className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+        style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+        {loading ? 'Guardando...' : label}
+      </button>
+    </div>
+  );
+}
+
