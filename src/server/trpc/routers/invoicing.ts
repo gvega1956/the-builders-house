@@ -408,7 +408,10 @@ export const invoicingRouter = createTRPCRouter({
   void: protectedProcedure
     .input(z.object({ id: z.string().cuid(), reason: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const invoice = await ctx.db.invoice.findUnique({ where: { id: input.id } });
+      const invoice = await ctx.db.invoice.findUnique({
+        where: { id: input.id },
+        include: { items: true },
+      });
       if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
       if (invoice.status === 'VOIDED')
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya está anulada' });
@@ -447,13 +450,58 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
+        // Bug 2.2: restore inventory when voiding a stock-decremented INVOICE.
+        // Only ISSUED and PARTIAL had OUT movements created (PENDING_AUTHORIZATION did not).
+        // QUOTE never creates OUT movements so it is excluded by type check.
+        const needsInventoryReversal =
+          invoice.type === 'INVOICE' &&
+          (invoice.status === 'ISSUED' || invoice.status === 'PARTIAL');
+
+        const orphanItems: Array<{ productId: string; quantity: number }> = [];
+
+        if (needsInventoryReversal) {
+          for (const item of invoice.items) {
+            if (!item.locationId) {
+              // ON DELETE SET NULL nullified this item's location — cannot restore stock.
+              // Log for traceability; do not block the void.
+              orphanItems.push({ productId: item.productId, quantity: item.quantity });
+              continue;
+            }
+
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                locationId: item.locationId,
+                movementType: 'RETURN',
+                quantity: item.quantity, // positive: stock re-entry (sign convention)
+                referenceType: 'INVOICE',
+                referenceId: invoice.invoiceNumber,
+                userId: ctx.session!.user!.id!,
+                ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+              },
+            });
+
+            await tx.productLocation.update({
+              where: { id: item.locationId },
+              data: { quantityOnHand: { increment: item.quantity } },
+            });
+          }
+        }
+
+        const auditNewValues: Record<string, unknown> = { reason: input.reason };
+        if (orphanItems.length > 0) {
+          auditNewValues.stockNotRestoredItems = orphanItems;
+          auditNewValues.stockNotRestoredReason =
+            'locationId=NULL — ubicación eliminada; stock de estos ítems no fue restaurado';
+        }
+
         await tx.auditLog.create({
           data: {
             userId: ctx.session!.user!.id!,
             action: 'VOID',
             entityType: 'Invoice',
             entityId: input.id,
-            newValues: { reason: input.reason } as Prisma.InputJsonValue,
+            newValues: auditNewValues as Prisma.InputJsonValue,
             ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
           },
         });
