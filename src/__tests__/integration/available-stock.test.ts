@@ -32,10 +32,12 @@ describe('calculateAvailableStock', () => {
     expect(calculateAvailableStock({ quantityOnHand: -2, reservedQuantity: 0 })).toBe(-2);
   });
 
-  it('reservas superan stock (estado de data race resuelto): devuelve negativo', () => {
+  it('overcommit — reservas superan stock: resultado negativo (señal de inconsistencia)', () => {
     // Caso de borde: si reservedQuantity > quantityOnHand, el resultado es negativo.
-    // Esto indica que el sistema tiene una inconsistencia que debe resolverse,
-    // pero la función devuelve la realidad matemática, no oculta el problema.
+    // Ocurre si dos vendedores reservan simultáneamente y la lógica de lock falla.
+    // La función devuelve la realidad matemática, no oculta el problema —
+    // el sistema que la llama debe tratar resultado < 0 como alerta de overcommit.
+    expect(calculateAvailableStock({ quantityOnHand: 5, reservedQuantity: 8 })).toBe(-3);
     expect(calculateAvailableStock({ quantityOnHand: 3, reservedQuantity: 5 })).toBe(-2);
   });
 });
