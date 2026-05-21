@@ -14,6 +14,7 @@ const invoiceItemSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().positive(),
   discountPercent: z.number().min(0).max(100).default(0),
+  discountReason: z.string().min(1).optional(),
 });
 
 type LocationRow = {
@@ -65,6 +66,52 @@ function calcInvoiceTotals(items: z.infer<typeof invoiceItemSchema>[], taxRate: 
   const total = subtotal.add(taxAmount);
 
   return { itemsData, subtotal, taxRateDecimal, taxAmount, total };
+}
+
+// Bug 2.7: minimum-price validation helper.
+// VENDOR cannot create below-cost invoices or quotes.
+// MANAGER/ADMIN can, but must supply discountReason per item.
+// Returns the list of below-cost items for audit-log inclusion (empty = all at or above cost).
+type BelowCostItem = {
+  productId: string;
+  productName: string;
+  unitCost: string;
+  soldAt: string;
+  discountReason: string;
+};
+
+function validateItemPricing(
+  items: Array<{ productId: string; unitPrice: Prisma.Decimal; discountReason?: string }>,
+  productMap: Map<string, { name: string; unitCost: Prisma.Decimal }>,
+  role: string,
+): BelowCostItem[] {
+  const below: BelowCostItem[] = [];
+  for (const item of items) {
+    const product = productMap.get(item.productId);
+    if (!product) continue;
+    if (product.unitCost.gt(item.unitPrice)) {
+      if (role === 'VENDOR') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `El precio $${item.unitPrice} del producto '${product.name}' es inferior al costo ($${product.unitCost}). Los VENDORs no pueden vender bajo costo.`,
+        });
+      }
+      if (!item.discountReason) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `El precio $${item.unitPrice} del producto '${product.name}' es inferior al costo ($${product.unitCost}). Proporciona discountReason para autorizar esta venta bajo costo.`,
+        });
+      }
+      below.push({
+        productId: item.productId,
+        productName: product.name,
+        unitCost: product.unitCost.toString(),
+        soldAt: item.unitPrice.toString(),
+        discountReason: item.discountReason,
+      });
+    }
+  }
+  return below;
 }
 
 export const invoicingRouter = createTRPCRouter({
@@ -178,6 +225,26 @@ export const invoicingRouter = createTRPCRouter({
         });
       }
 
+      // Role declared here (not in INVOICE-only block) so Bug 2.7 pricing applies to both paths.
+      const role = (ctx.session!.user as { role?: string }).role ?? 'VENDOR';
+      const canOverrideStock = role === 'ADMIN' || role === 'MANAGER';
+
+      // Bug 2.7: validate minimum price (Option A — applies to QUOTE and INVOICE).
+      const productIds = [...new Set(items.map((i) => i.productId))];
+      const pricedProducts = await ctx.db.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, name: true, unitCost: true },
+      });
+      const productMap = new Map(
+        pricedProducts.map((p) => [p.id, { name: p.name, unitCost: p.unitCost }]),
+      );
+      const pricingItems = items.map((item) => ({
+        productId: item.productId,
+        unitPrice: toDecimal(item.unitPrice),
+        discountReason: item.discountReason,
+      }));
+      const belowCostItems = validateItemPricing(pricingItems, productMap, role);
+
       // ── QUOTE: sin movimientos de inventario ──────────────────────────────
       // Cotizaciones no descuentan stock ni bloquean ubicaciones.
       // Usan la secuencia QUOTE (COT-XXXXX), no la secuencia INVOICE.
@@ -203,9 +270,6 @@ export const invoicingRouter = createTRPCRouter({
       }
 
       // ── INVOICE: transacción completa con lock pesimista y movimientos ─────
-      const role = (ctx.session!.user as { role?: string }).role ?? 'VENDOR';
-      const canOverrideStock = role === 'ADMIN' || role === 'MANAGER';
-
       // Añade locationId a cada item — necesario para que authorizeBackorder
       // pueda releer la ubicación original desde invoice_items al autorizar.
       const invoiceItemsData = itemsData.map((d, idx) => ({
@@ -355,6 +419,11 @@ export const invoicingRouter = createTRPCRouter({
         if (hasShortage && canOverrideStock) {
           auditValues.managerStockOverride = true;
           auditValues.shortagesOverridden = shortages;
+          auditValues.authorizedBy = role;
+        }
+        if (belowCostItems.length > 0) {
+          auditValues.belowCostSale = true;
+          auditValues.belowCostItems = belowCostItems;
           auditValues.authorizedBy = role;
         }
 
@@ -713,6 +782,7 @@ export const invoicingRouter = createTRPCRouter({
               productId: z.string().cuid(),
               locationId: z.string().cuid(),
               quantity: z.number().int().positive(),
+              discountReason: z.string().min(1).optional(),
             })
           )
           .min(1)
@@ -809,6 +879,25 @@ export const invoicingRouter = createTRPCRouter({
 
       const role = (ctx.session!.user as { role?: string }).role ?? 'VENDOR';
       const canOverrideStock = role === 'ADMIN' || role === 'MANAGER';
+
+      // Bug 2.7: validate minimum price at conversion time (prices inherited from QUOTE).
+      const productIdsForCost = [...new Set(resolvedItems.map((i) => i.productId))];
+      const pricedProductsForConvert = await ctx.db.product.findMany({
+        where: { id: { in: productIdsForCost } },
+        select: { id: true, name: true, unitCost: true },
+      });
+      const productCostMap = new Map(
+        pricedProductsForConvert.map((p) => [p.id, { name: p.name, unitCost: p.unitCost }]),
+      );
+      const convertPricingItems = resolvedItems.map((item) => {
+        const price = quotePriceMap.get(item.productId)!;
+        return {
+          productId: item.productId,
+          unitPrice: price.unitPrice,
+          discountReason: item.discountReason,
+        };
+      });
+      const belowCostItems = validateItemPricing(convertPricingItems, productCostMap, role);
 
       return ctx.db.$transaction(async (tx) => {
         // Lock the QUOTE row first to serialize concurrent convertQuoteToInvoice calls.
@@ -955,6 +1044,11 @@ export const invoicingRouter = createTRPCRouter({
         if (hasShortage && canOverrideStock) {
           auditValues.managerStockOverride = true;
           auditValues.shortagesOverridden = shortages;
+          auditValues.authorizedBy = role;
+        }
+        if (invoiceStatus === 'ISSUED' && belowCostItems.length > 0) {
+          auditValues.belowCostSale = true;
+          auditValues.belowCostItems = belowCostItems;
           auditValues.authorizedBy = role;
         }
 

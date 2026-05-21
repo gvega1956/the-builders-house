@@ -72,7 +72,7 @@ beforeAll(async () => {
       sku: 'BUG26-PROD-1',
       name: 'Test Product Bug26',
       categoryId: catId,
-      unitCost: 50,
+      unitCost: 20,
       retailPrice: 100,
       wholesalePrice: 80,
     },
