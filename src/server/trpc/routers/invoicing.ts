@@ -319,7 +319,13 @@ export const invoicingRouter = createTRPCRouter({
           });
         }
 
-        // 6. Audit log. Si MANAGER forzó stock negativo, lo registra explícitamente
+        // 6. Bug 2.4: increment customer.currentBalance by the invoice total.
+        await tx.customer.update({
+          where: { id: input.customerId },
+          data: { currentBalance: { increment: total } },
+        });
+
+        // 7. Audit log. Si MANAGER forzó stock negativo, lo registra explícitamente
         //    para que quede trazabilidad del override en el log de auditoría.
         const auditValues: Record<string, unknown> = {
           invoiceNumber,
@@ -364,6 +370,7 @@ export const invoicingRouter = createTRPCRouter({
       const invoice = await ctx.db.invoice.findUnique({ where: { id: input.invoiceId } });
       if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
 
+      // Type guard: QUOTE cannot receive payments
       if (invoice.type === 'QUOTE') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
@@ -371,8 +378,26 @@ export const invoicingRouter = createTRPCRouter({
         });
       }
 
+      // Status guards: only ISSUED and PARTIAL accept payments
       if (invoice.status === 'VOIDED')
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Factura anulada' });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'La factura está anulada.' });
+      if (invoice.status === 'PAID')
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'La factura ya está completamente pagada.' });
+      if (invoice.status === 'PENDING_AUTHORIZATION')
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'La factura está pendiente de autorización. Autorízala antes de registrar pagos.',
+        });
+      if (invoice.status === 'DRAFT')
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'La factura en borrador debe emitirse antes de recibir pagos.',
+        });
+      if (invoice.status === 'CONVERTED')
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Esta cotización ya fue convertida a factura. El pago debe aplicarse a la factura derivada.',
+        });
 
       const balanceDue = invoice.total.sub(invoice.paidAmount);
       if (toDecimal(input.amount).gt(balanceDue)) {
@@ -385,8 +410,8 @@ export const invoicingRouter = createTRPCRouter({
       const totalPaid = invoice.paidAmount.add(toDecimal(input.amount));
       const newStatus = totalPaid.gte(invoice.total) ? 'PAID' : 'PARTIAL';
 
-      const [payment] = await ctx.db.$transaction([
-        ctx.db.payment.create({
+      return ctx.db.$transaction(async (tx) => {
+        const payment = await tx.payment.create({
           data: {
             invoiceId: input.invoiceId,
             amount: toDecimal(input.amount),
@@ -395,14 +420,40 @@ export const invoicingRouter = createTRPCRouter({
             notes: input.notes,
             receivedById: ctx.session!.user!.id!,
           },
-        }),
-        ctx.db.invoice.update({
+        });
+
+        await tx.invoice.update({
           where: { id: input.invoiceId },
           data: { paidAmount: totalPaid, status: newStatus },
-        }),
-      ]);
+        });
 
-      return payment;
+        // Bug 2.4: decrement customer.currentBalance by the payment amount
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: { currentBalance: { decrement: toDecimal(input.amount) } },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'PAYMENT',
+            entityType: 'Invoice',
+            entityId: input.invoiceId,
+            newValues: {
+              amount: input.amount,
+              method: input.method,
+              reference: input.reference ?? null,
+              previousBalance: balanceDue.toString(),
+              newBalance: balanceDue.sub(toDecimal(input.amount)).toString(),
+              previousStatus: invoice.status,
+              newStatus,
+            } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+          },
+        });
+
+        return payment;
+      });
     }),
 
   void: protectedProcedure
@@ -486,6 +537,15 @@ export const invoicingRouter = createTRPCRouter({
               data: { quantityOnHand: { increment: item.quantity } },
             });
           }
+        }
+
+        // Bug 2.4: remove the outstanding balance of this invoice from customer.currentBalance.
+        // Formula: total - paidAmount covers both ISSUED (paidAmount=0) and PARTIAL cases.
+        if (needsInventoryReversal) {
+          await tx.customer.update({
+            where: { id: invoice.customerId },
+            data: { currentBalance: { decrement: invoice.total.sub(invoice.paidAmount) } },
+          });
         }
 
         const auditNewValues: Record<string, unknown> = { reason: input.reason };
@@ -592,6 +652,12 @@ export const invoicingRouter = createTRPCRouter({
           where: { id: input.id },
           data: { status: 'ISSUED' },
           include: { items: true },
+        });
+
+        // Bug 2.4: now that stock is committed, add to customer.currentBalance.
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: { currentBalance: { increment: invoice.total } },
         });
 
         await tx.auditLog.create({
@@ -838,6 +904,12 @@ export const invoicingRouter = createTRPCRouter({
               data: { quantityOnHand: { decrement: item.quantity } },
             });
           }
+
+          // Bug 2.4: INVOICE is now committed — add to customer.currentBalance.
+          await tx.customer.update({
+            where: { id: quote.customerId },
+            data: { currentBalance: { increment: total } },
+          });
         }
 
         // Mark original QUOTE as CONVERTED (Regla 2, ADR-002).
