@@ -2,18 +2,39 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 
-const movementCreateSchema = z.object({
-  productId: z.string().cuid(),
-  locationId: z.string().cuid(),
-  movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']),
-  quantity: z.number().int().refine((n) => n !== 0, 'La cantidad no puede ser cero'),
-  referenceType: z.enum(['INVOICE', 'PURCHASE_ORDER', 'ADJUSTMENT', 'TRANSFER', 'DAMAGE_REPORT', 'CYCLE_COUNT']),
-  referenceId: z.string().optional(),
-  photoUrl: z.string().url().optional(),
-  notes: z.string().max(1000).optional(),
-  gpsLat: z.number().optional(),
-  gpsLng: z.number().optional(),
-});
+const movementCreateSchema = z
+  .object({
+    productId: z.string().cuid(),
+    locationId: z.string().cuid(),
+    movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']),
+    quantity: z.number().int().refine((n) => n !== 0, 'La cantidad no puede ser cero'),
+    referenceType: z.enum(['INVOICE', 'PURCHASE_ORDER', 'ADJUSTMENT', 'TRANSFER', 'DAMAGE_REPORT', 'CYCLE_COUNT']),
+    referenceId: z.string().optional(),
+    photoUrl: z.string().url().optional(),
+    notes: z.string().max(1000).optional(),
+    gpsLat: z.number().optional(),
+    gpsLng: z.number().optional(),
+  })
+  .superRefine(({ movementType, quantity }, ctx) => {
+    const mustBePositive = ['IN', 'RETURN'];
+    const mustBeNegative = ['OUT', 'DAMAGE'];
+
+    if (mustBePositive.includes(movementType) && quantity < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['quantity'],
+        message: `Los movimientos de tipo ${movementType} deben tener cantidad positiva (entrada de stock)`,
+      });
+    }
+
+    if (mustBeNegative.includes(movementType) && quantity > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['quantity'],
+        message: `Los movimientos de tipo ${movementType} deben tener cantidad negativa (salida de stock)`,
+      });
+    }
+  });
 
 type LocationRow = { id: string; productId: string; quantityOnHand: number };
 
