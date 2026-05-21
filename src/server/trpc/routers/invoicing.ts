@@ -27,6 +27,14 @@ type LocationRow = {
 // Returns itemsData WITHOUT locationId — this is the explicit strip for QUOTE items,
 // which must always have locationId=NULL in the DB.
 // The INVOICE path maps itemsData → invoiceItemsData adding locationId back (see below).
+//
+// Bug 2.6 — lineTotal invariant:
+//   invoiceItemSchema has no lineTotal field: Zod strips any lineTotal the frontend sends.
+//   Every lineTotal is computed here from unitPrice × quantity × discountFactor.
+//   subtotal is the exact Decimal sum of all lineTotals — never independently recomputed.
+//   The assertion below guards against future refactors that compute subtotal via a
+//   different code path (e.g., order-level discounts), which would silently break the
+//   per-item lineTotal ↔ subtotal invariant.
 function calcInvoiceTotals(items: z.infer<typeof invoiceItemSchema>[], taxRate: number) {
   const itemsData = items.map((item) => {
     const discountFactor = toDecimal(1).sub(toDecimal(item.discountPercent).div(100));
@@ -41,6 +49,17 @@ function calcInvoiceTotals(items: z.infer<typeof invoiceItemSchema>[], taxRate: 
   });
 
   const subtotal = itemsData.reduce((sum, i) => sum.add(i.lineTotal), toDecimal(0));
+
+  // Bug 2.6: sanity — subtotal must equal sum(lineTotal).
+  // Currently tautological (subtotal IS that sum); fires only if this function is
+  // refactored to compute subtotal via a separate path while lineTotals stay unchanged.
+  const lineTotalSum = itemsData.reduce((s, i) => s.add(i.lineTotal), toDecimal(0));
+  if (!lineTotalSum.eq(subtotal)) {
+    console.error(
+      `[BUG-2.6] lineTotal sum (${lineTotalSum.toString()}) ≠ subtotal (${subtotal.toString()}) — calculation inconsistency detected`,
+    );
+  }
+
   const taxRateDecimal = toDecimal(taxRate);
   const taxAmount = subtotal.mul(taxRateDecimal);
   const total = subtotal.add(taxAmount);
