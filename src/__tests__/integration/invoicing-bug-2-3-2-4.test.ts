@@ -387,4 +387,43 @@ describe('Bug 2.4 — currentBalance del cliente', () => {
     const after = await db.customer.findUnique({ where: { id: customerId } });
     expect(Number(after!.currentBalance)).toBeCloseTo(0, 2);
   });
+
+  it('T11: ciclo completo $1000 + IVU 11.5% — dos pagos hasta PAID, intento final rechazado', async () => {
+    // Factura: 1 ítem × $1000, IVU 11.5% → total = $1115.00
+    const vendor = makeCaller(vendorId, 'VENDOR');
+    const invoice = await vendor.create({
+      customerId,
+      type: 'INVOICE',
+      items: [{ productId, locationId, quantity: 1, unitPrice: 1000 }],
+      taxRate: 0.115,
+    });
+    expect(Number(invoice.total)).toBeCloseTo(1115, 2);
+    expect(invoice.status).toBe('ISSUED');
+
+    let customer = await db.customer.findUnique({ where: { id: customerId } });
+    expect(Number(customer!.currentBalance)).toBeCloseTo(1115, 2); // 0 + 1115
+
+    // Pago 1: $500 → PARTIAL, paidAmount=500, balance cliente=615
+    await vendor.addPayment({ invoiceId: invoice.id, amount: 500, method: 'CASH' });
+    let inv = await db.invoice.findUnique({ where: { id: invoice.id } });
+    expect(inv!.status).toBe('PARTIAL');
+    expect(Number(inv!.paidAmount)).toBeCloseTo(500, 2);
+    customer = await db.customer.findUnique({ where: { id: customerId } });
+    expect(Number(customer!.currentBalance)).toBeCloseTo(615, 2); // 1115 - 500
+
+    // Pago 2: $615 → PAID, paidAmount=1115, balance cliente=0
+    await vendor.addPayment({ invoiceId: invoice.id, amount: 615, method: 'TRANSFER' });
+    inv = await db.invoice.findUnique({ where: { id: invoice.id } });
+    expect(inv!.status).toBe('PAID');
+    expect(Number(inv!.paidAmount)).toBeCloseTo(1115, 2);
+    customer = await db.customer.findUnique({ where: { id: customerId } });
+    expect(Number(customer!.currentBalance)).toBeCloseTo(0, 2); // 615 - 615
+
+    // Pago 3: $0.01 → BAD_REQUEST (factura ya PAID — guard de status, no de balance)
+    // El guard invoice.status === 'PAID' dispara antes del balance check.
+    // Mensaje: "La factura ya está completamente pagada."
+    await expect(
+      vendor.addPayment({ invoiceId: invoice.id, amount: 0.01, method: 'CASH' })
+    ).rejects.toThrow(/pagada/i);
+  });
 });
