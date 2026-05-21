@@ -119,6 +119,24 @@ async function main() {
   }
   console.log(`✓ ${productos.length} productos con stock inicial`);
 
+  // Crear secuencias de numeración correlativa
+  // update: {} intencional — no resetear currentValue si ya existen registros en producción
+  const sequenceData = [
+    { name: 'INVOICE',        prefix: 'FAC-',   padding: 5 },
+    { name: 'PURCHASE_ORDER', prefix: 'OC-RD-', padding: 5 },
+    { name: 'CUSTOMER',       prefix: 'CLI-',   padding: 5 },
+    { name: 'QUOTE',          prefix: 'COT-',   padding: 5 },
+  ];
+
+  for (const seq of sequenceData) {
+    await db.sequence.upsert({
+      where:  { name: seq.name },
+      update: {},
+      create: { ...seq, currentValue: 0 },
+    });
+  }
+  console.log(`✓ ${sequenceData.length} secuencias (INVOICE, PURCHASE_ORDER, CUSTOMER, QUOTE)`);
+
   console.log('✅ Seed completado');
 }
 

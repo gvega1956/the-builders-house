@@ -161,6 +161,39 @@ Tablas clave:
 
 ---
 
+## TAXONOMÍA DE MOVIMIENTOS DE INVENTARIO
+
+Esta tabla es la fuente de verdad para el campo `movementType` en `inventory_movements`. Toda lógica de negocio, validación Zod, y UI debe respetar esta convención sin excepción.
+
+| Tipo | Significado | Signo de `quantity` | Origen del evento |
+|------|-------------|---------------------|-------------------|
+| `IN` | Entrada por compra / recepción de PO | **Positivo** (`> 0`) | Llegada de mercancía nueva |
+| `OUT` | Salida por venta | **Negativo** (`< 0`) | Factura emitida |
+| `RETURN` | Devolución de cliente | **Positivo** (`> 0`) | Cliente devuelve producto vendido |
+| `DAMAGE` | Producto dañado / descartado | **Negativo** (`< 0`) | Inspección detecta daño |
+| `TRANSFER` | Movimiento entre ubicaciones | Cualquiera | Reubicación interna |
+| `ADJUSTMENT` | Corrección por conteo cíclico | Cualquiera | Conteo físico ≠ sistema |
+
+### Regla crítica — TRANSFER es siempre dos movimientos atómicos
+
+Un `TRANSFER` nunca es un solo movimiento. Es **dos movimientos dentro de la misma transacción** con el mismo `referenceId` que los vincula:
+
+1. Movimiento `OUT` (cantidad negativa) en la ubicación **origen**
+2. Movimiento `IN` (cantidad positiva) en la ubicación **destino**
+
+Ambos se crean en `$transaction`. Si uno falla, el otro hace rollback. Un `TRANSFER` suelto sin su espejo es un bug, no un estado válido.
+
+### Validación de signos (enforced en Zod)
+
+```ts
+// Reglas de validación de signo por tipo de movimiento:
+// IN, RETURN  → quantity DEBE ser > 0
+// OUT, DAMAGE → quantity DEBE ser < 0
+// TRANSFER, ADJUSTMENT → quantity puede ser cualquiera (≠ 0)
+```
+
+---
+
 ## SISTEMA ANTI-ROBO (6 capas — implementar todas)
 
 1. **Identidad:** Login obligatorio, 2FA para admin/manager, sesiones 8h

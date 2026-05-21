@@ -1,0 +1,141 @@
+import { z } from 'zod';
+import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
+import { TRPCError } from '@trpc/server';
+import type { Prisma } from '@prisma/client';
+import { getNextSequenceValue } from '@/lib/sequences';
+
+const customerSchema = z.object({
+  name: z.string().min(1).max(200),
+  type: z.enum(['RETAIL', 'WHOLESALE']).default('RETAIL'),
+  taxId: z.string().optional(),
+  phone: z.string().optional(),
+  email: z.string().email().optional().or(z.literal('')),
+  address: z.string().optional(),
+  municipality: z.string().optional(),
+  creditLimit: z.number().min(0).default(0),
+  notes: z.string().optional(),
+});
+
+export const customersRouter = createTRPCRouter({
+  list: protectedProcedure
+    .input(
+      z.object({
+        search: z.string().optional(),
+        type: z.enum(['RETAIL', 'WHOLESALE']).optional(),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(1000).default(50),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const { search, type, page = 1, pageSize = 50 } = input ?? {};
+      const skip = (page - 1) * pageSize;
+
+      const where: Prisma.CustomerWhereInput = {
+        isActive: true,
+        ...(type && { type }),
+        ...(search && {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' } },
+            { code: { contains: search, mode: 'insensitive' } },
+            { phone: { contains: search, mode: 'insensitive' } },
+            { email: { contains: search, mode: 'insensitive' } },
+            { municipality: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      };
+
+      const [customers, total] = await Promise.all([
+        ctx.db.customer.findMany({
+          where,
+          include: {
+            _count: { select: { invoices: true } },
+          },
+          orderBy: { name: 'asc' },
+          skip,
+          take: pageSize,
+        }),
+        ctx.db.customer.count({ where }),
+      ]);
+
+      return { customers, total, page, pageSize };
+    }),
+
+  byId: protectedProcedure
+    .input(z.string().cuid())
+    .query(async ({ ctx, input }) => {
+      const customer = await ctx.db.customer.findUnique({
+        where: { id: input },
+        include: {
+          invoices: {
+            orderBy: { createdAt: 'desc' },
+            take: 20,
+            include: { _count: { select: { items: true } } },
+          },
+        },
+      });
+      if (!customer) throw new TRPCError({ code: 'NOT_FOUND' });
+      return customer;
+    }),
+
+  create: protectedProcedure
+    .input(customerSchema)
+    .mutation(async ({ ctx, input }) => {
+      const customer = await ctx.db.$transaction(async (tx) => {
+        const code = await getNextSequenceValue(tx, 'CUSTOMER');
+
+        const created = await tx.customer.create({
+          data: { ...input, code, email: input.email || undefined },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'CREATE',
+            entityType: 'Customer',
+            entityId: created.id,
+            newValues: { code: created.code, name: created.name } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+          },
+        });
+
+        return created;
+      });
+
+      return customer;
+    }),
+
+  update: protectedProcedure
+    .input(z.object({ id: z.string().cuid(), data: customerSchema.partial() }))
+    .mutation(async ({ ctx, input }) => {
+      const before = await ctx.db.customer.findUnique({ where: { id: input.id } });
+      if (!before) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      const updated = await ctx.db.customer.update({
+        where: { id: input.id },
+        data: { ...input.data, email: input.data.email || undefined },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE',
+          entityType: 'Customer',
+          entityId: updated.id,
+          oldValues: { name: before.name } as Prisma.InputJsonValue,
+          newValues: { name: updated.name } as Prisma.InputJsonValue,
+          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+        },
+      });
+
+      return updated;
+    }),
+
+  deactivate: protectedProcedure
+    .input(z.string().cuid())
+    .mutation(async ({ ctx, input }) => {
+      return ctx.db.customer.update({
+        where: { id: input },
+        data: { isActive: false },
+      });
+    }),
+});

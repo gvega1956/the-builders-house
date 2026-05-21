@@ -423,6 +423,20 @@ model CycleCount {
 }
 
 // ─────────────────────────────────────────────────────────────
+// SECUENCIAS — números correlativos atómicos
+// ─────────────────────────────────────────────────────────────
+
+model Sequence {
+  name         String   @id            // 'INVOICE', 'PURCHASE_ORDER', 'CUSTOMER', 'QUOTE'
+  prefix       String                  // 'FAC-', 'OC-RD-', 'CLI-', 'COT-'
+  padding      Int      @default(5)    // dígitos del número: FAC-00001 = 5
+  currentValue Int      @default(0)    // arranca en 0; primer valor generado = 1
+  updatedAt    DateTime @updatedAt
+
+  @@map("sequences")
+}
+
+// ─────────────────────────────────────────────────────────────
 // AUDITORÍA (inmutable — append-only)
 // ─────────────────────────────────────────────────────────────
 
