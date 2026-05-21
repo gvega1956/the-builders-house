@@ -121,8 +121,22 @@ export const customersRouter = createTRPCRouter({
           action: 'UPDATE',
           entityType: 'Customer',
           entityId: updated.id,
-          oldValues: { name: before.name } as Prisma.InputJsonValue,
-          newValues: { name: updated.name } as Prisma.InputJsonValue,
+          oldValues: {
+            name: before.name,
+            type: before.type,
+            email: before.email,
+            phone: before.phone,
+            creditLimit: before.creditLimit?.toString() ?? null,
+            municipality: before.municipality,
+          } as Prisma.InputJsonValue,
+          newValues: {
+            name: updated.name,
+            type: updated.type,
+            email: updated.email,
+            phone: updated.phone,
+            creditLimit: updated.creditLimit?.toString() ?? null,
+            municipality: updated.municipality,
+          } as Prisma.InputJsonValue,
           ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
         },
       });
@@ -133,9 +147,25 @@ export const customersRouter = createTRPCRouter({
   deactivate: protectedProcedure
     .input(z.string().cuid())
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.customer.update({
+      const customer = await ctx.db.customer.findUnique({ where: { id: input }, select: { name: true, code: true } });
+      if (!customer) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      const updated = await ctx.db.customer.update({
         where: { id: input },
         data: { isActive: false },
       });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'DEACTIVATE',
+          entityType: 'Customer',
+          entityId: input,
+          newValues: { name: customer.name, code: customer.code, isActive: false } as Prisma.InputJsonValue,
+          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+        },
+      });
+
+      return updated;
     }),
 });

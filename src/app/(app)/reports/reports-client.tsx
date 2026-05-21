@@ -3,19 +3,12 @@
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
+import { glass } from '@/lib/ui';
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, Package, DollarSign, Users, Truck, BarChart3 } from 'lucide-react';
-
-const glass = {
-  backgroundColor: 'rgba(255,255,255,0.72)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: '1px solid rgba(255,255,255,0.85)',
-  boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
-} as React.CSSProperties;
+import { TrendingUp, Package, DollarSign, Users, BarChart3 } from 'lucide-react';
 
 const PIE_COLORS = [brand.orange[500], brand.navy[700], brand.orange[400], brand.navy[600], '#059669'];
 
@@ -40,9 +33,6 @@ export function ReportsClient() {
 
   const lowStockProducts = products?.products.filter((p) => p.totalStock <= p.minStock) ?? [];
 
-  const paymentMethodData = invoices?.invoices
-    .flatMap((inv) => []) // placeholder — real data would come from payments
-    ?? [];
 
   const kpiCards = [
     {

@@ -233,8 +233,15 @@ export const invoicingRouter = createTRPCRouter({
       const productIds = [...new Set(items.map((i) => i.productId))];
       const pricedProducts = await ctx.db.product.findMany({
         where: { id: { in: productIds } },
-        select: { id: true, name: true, unitCost: true },
+        select: { id: true, name: true, sku: true, unitCost: true, isActive: true },
       });
+      const inactiveProducts = pricedProducts.filter((p) => !p.isActive);
+      if (inactiveProducts.length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Productos inactivos: ${inactiveProducts.map((p) => p.sku).join(', ')}`,
+        });
+      }
       const productMap = new Map(
         pricedProducts.map((p) => [p.id, { name: p.name, unitCost: p.unitCost }]),
       );
@@ -343,6 +350,14 @@ export const invoicingRouter = createTRPCRouter({
             },
             include: { items: true },
           });
+
+          // Reserve stock for PENDING_AUTHORIZATION so calculateAvailableStock is accurate.
+          for (const item of items) {
+            await tx.productLocation.update({
+              where: { id: item.locationId! },
+              data: { reservedQuantity: { increment: item.quantity } },
+            });
+          }
 
           await tx.auditLog.create({
             data: {
@@ -487,6 +502,23 @@ export const invoicingRouter = createTRPCRouter({
           message: 'Esta cotización ya fue convertida a factura. El pago debe aplicarse a la factura derivada.',
         });
 
+      // creditLimit check for CREDIT method
+      if (input.method === 'CREDIT') {
+        const customer = await ctx.db.customer.findUnique({
+          where: { id: invoice.customerId },
+          select: { creditLimit: true, currentBalance: true, name: true },
+        });
+        if (customer && customer.creditLimit && customer.creditLimit.gt(0)) {
+          const newBalance = customer.currentBalance.add(toDecimal(input.amount));
+          if (newBalance.gt(customer.creditLimit)) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Pago en crédito excede el límite de crédito del cliente ${customer.name}. Límite: $${customer.creditLimit}, Balance actual: $${customer.currentBalance}, Pago solicitado: $${input.amount}`,
+            });
+          }
+        }
+      }
+
       const balanceDue = invoice.total.sub(invoice.paidAmount);
       if (toDecimal(input.amount).gt(balanceDue)) {
         throw new TRPCError({
@@ -627,13 +659,26 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        // Bug 2.4: remove the outstanding balance of this invoice from customer.currentBalance.
-        // Formula: total - paidAmount covers both ISSUED (paidAmount=0) and PARTIAL cases.
+        // Balance adjustment on void:
+        // - ISSUED: remove full total from currentBalance (paidAmount=0, so total-paidAmount=total)
+        // - PARTIAL: remove the full total; the paidAmount portion becomes negative balance (credit to client)
         if (needsInventoryReversal) {
           await tx.customer.update({
             where: { id: invoice.customerId },
-            data: { currentBalance: { decrement: invoice.total.sub(invoice.paidAmount) } },
+            data: { currentBalance: { decrement: invoice.total } },
           });
+        }
+
+        // PENDING_AUTHORIZATION: no inventory movements, no balance changes, but we need
+        // to clean up any reservedQuantity that was set when the invoice was created.
+        if (invoice.type === 'INVOICE' && invoice.status === 'PENDING_AUTHORIZATION') {
+          for (const item of invoice.items) {
+            if (!item.locationId) continue;
+            await tx.productLocation.update({
+              where: { id: item.locationId },
+              data: { reservedQuantity: { decrement: item.quantity } },
+            });
+          }
         }
 
         const auditNewValues: Record<string, unknown> = { reason: input.reason };
@@ -714,7 +759,7 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        // Create OUT movements and decrement stock per item.
+        // Release reserved quantity and create OUT movements.
         // Stock may go negative — that is the explicit MANAGER decision being recorded here.
         for (const item of invoice.items) {
           await tx.inventoryMovement.create({
@@ -732,7 +777,10 @@ export const invoicingRouter = createTRPCRouter({
 
           await tx.productLocation.update({
             where: { id: item.locationId! },
-            data: { quantityOnHand: { decrement: item.quantity } },
+            data: {
+              quantityOnHand: { decrement: item.quantity },
+              reservedQuantity: { decrement: item.quantity },
+            },
           });
         }
 

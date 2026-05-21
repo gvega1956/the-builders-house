@@ -228,6 +228,7 @@ model Product {
   purchaseItems  PurchaseOrderItem[]
   cycleCounts    CycleCount[]
 
+  @@index([isActive, name])
   @@map("products")
 }
 
@@ -276,6 +277,9 @@ model InventoryMovement {
   location        ProductLocation   @relation(fields: [locationId], references: [id])
   user            User              @relation(fields: [userId], references: [id])
 
+  @@index([createdAt(sort: Desc)])
+  @@index([movementType])
+  @@index([productId, createdAt(sort: Desc)])
   @@map("inventory_movements")
 }
 
@@ -303,6 +307,7 @@ model Customer {
 
   invoices            Invoice[]
 
+  @@index([isActive, name])
   @@map("customers")
 }
 
@@ -331,6 +336,9 @@ model Invoice {
   items             InvoiceItem[]
   payments          Payment[]
 
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@index([customerId, status])
   @@map("invoices")
 }
 
@@ -463,5 +471,8 @@ model AuditLog {
 
   user        User     @relation(fields: [userId], references: [id])
 
+  @@index([createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([entityType, entityId])
   @@map("audit_log")
 }

@@ -6,10 +6,6 @@ type LocationWithProduct = Prisma.ProductLocationGetPayload<{
   include: { product: { select: { unitCost: true } } };
 }>;
 
-type CategoryWithProducts = Prisma.CategoryGetPayload<{
-  include: { products: { include: { locations: true } } };
-}>;
-
 type InvoiceForReduce = { total: Prisma.Decimal; createdAt: Date };
 
 export const dashboardRouter = createTRPCRouter({
@@ -28,7 +24,7 @@ export const dashboardRouter = createTRPCRouter({
       const from = input?.from ?? todayStart;
       const to = input?.to ?? now;
 
-      const [invoicesToday, unitsSold, locations, recentMovements, adjustmentsWithoutPhoto] =
+      const [invoicesToday, unitsSold, locations, itemCosts, recentMovements, adjustmentsWithoutPhoto] =
         await Promise.all([
           ctx.db.invoice.aggregate({
             _sum: { total: true },
@@ -50,6 +46,18 @@ export const dashboardRouter = createTRPCRouter({
           ctx.db.productLocation.findMany({
             include: { product: { select: { unitCost: true } } },
           }) as Promise<LocationWithProduct[]>,
+          ctx.db.invoiceItem.findMany({
+            where: {
+              invoice: {
+                status: { in: ['PAID', 'PARTIAL', 'ISSUED'] },
+                createdAt: { gte: from, lte: to },
+              },
+            },
+            select: {
+              quantity: true,
+              product: { select: { unitCost: true } },
+            },
+          }),
           ctx.db.inventoryMovement.findMany({
             orderBy: { createdAt: 'desc' },
             take: 10,
@@ -79,8 +87,16 @@ export const dashboardRouter = createTRPCRouter({
         0
       );
 
+      const costToday = itemCosts.reduce(
+        (sum, item) => sum + item.quantity * Number(item.product.unitCost),
+        0
+      );
+
+      const salesToday = Number(invoicesToday._sum.total ?? 0);
+
       return {
-        salesToday: Number(invoicesToday._sum.total ?? 0),
+        salesToday,
+        costToday,
         invoiceCount: invoicesToday._count.id,
         unitsSold: unitsSold._sum.quantity ?? 0,
         inventoryValue,
@@ -122,17 +138,14 @@ export const dashboardRouter = createTRPCRouter({
     }),
 
   inventoryByCategory: protectedProcedure.query(async ({ ctx }) => {
-    const categories = (await ctx.db.category.findMany({
-      include: { products: { include: { locations: true } } },
-    })) as CategoryWithProducts[];
-
-    return categories.map((cat: CategoryWithProducts) => ({
-      name: cat.name,
-      units: cat.products.reduce(
-        (sum: number, p) =>
-          sum + p.locations.reduce((s: number, loc) => s + loc.quantityOnHand, 0),
-        0
-      ),
-    }));
+    const result = await ctx.db.$queryRaw<Array<{ name: string; units: number }>>`
+      SELECT c.name, COALESCE(SUM(pl."quantityOnHand"), 0)::int as units
+      FROM categories c
+      LEFT JOIN products p ON p."categoryId" = c.id AND p."isActive" = true
+      LEFT JOIN product_locations pl ON pl."productId" = p.id
+      GROUP BY c.id, c.name
+      ORDER BY units DESC
+    `;
+    return result;
   }),
 });

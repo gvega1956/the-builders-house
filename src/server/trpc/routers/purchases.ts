@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
+import { toDecimal } from '@/lib/money';
 
 export const purchasesRouter = createTRPCRouter({
   list: protectedProcedure
@@ -81,10 +82,10 @@ export const purchasesRouter = createTRPCRouter({
       const { items, freightCost, customsCost, ...rest } = input;
 
       const subtotal = items.reduce(
-        (sum, item) => sum + item.quantityOrdered * item.unitCostUsd,
-        0
+        (sum, item) => sum.add(toDecimal(item.quantityOrdered).mul(toDecimal(item.unitCostUsd))),
+        toDecimal(0)
       );
-      const totalLandedCost = subtotal + freightCost + customsCost;
+      const totalLandedCost = subtotal.add(toDecimal(freightCost)).add(toDecimal(customsCost));
 
       const order = await ctx.db.$transaction(async (tx) => {
         const poNumber = await getNextSequenceValue(tx, 'PURCHASE_ORDER');
@@ -113,10 +114,33 @@ export const purchasesRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const order = await ctx.db.purchaseOrder.findUnique({
+        where: { id: input.id },
+        select: { status: true, poNumber: true },
+      });
+      if (!order) throw new TRPCError({ code: 'NOT_FOUND' });
+
       const data: Prisma.PurchaseOrderUpdateInput = { status: input.status };
       if (input.status === 'RECEIVED') data.receivedDate = new Date();
 
-      return ctx.db.purchaseOrder.update({ where: { id: input.id }, data });
+      const updated = await ctx.db.purchaseOrder.update({ where: { id: input.id }, data });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE_STATUS',
+          entityType: 'PurchaseOrder',
+          entityId: input.id,
+          newValues: {
+            poNumber: order.poNumber,
+            previousStatus: order.status,
+            newStatus: input.status,
+          } as Prisma.InputJsonValue,
+          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+        },
+      });
+
+      return updated;
     }),
 
   receive: protectedProcedure
@@ -139,10 +163,42 @@ export const purchasesRouter = createTRPCRouter({
       });
       if (!order) throw new TRPCError({ code: 'NOT_FOUND' });
 
+      if (order.status !== 'IN_TRANSIT' && order.status !== 'RECEIVED') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `No se puede recibir una orden en estado ${order.status}. La orden debe estar IN_TRANSIT.`,
+        });
+      }
+
       await ctx.db.$transaction(async (tx) => {
+        const receivedSummary: Array<{ itemId: string; productId: string; quantityReceived: number }> = [];
+
         for (const recv of input.items) {
           const item = order.items.find((i) => i.id === recv.itemId);
           if (!item || recv.quantityReceived === 0) continue;
+
+          const alreadyReceived = item.quantityReceived + recv.quantityReceived;
+          if (alreadyReceived > item.quantityOrdered) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Cantidad a recibir (${recv.quantityReceived}) excede el saldo pendiente del ítem (${item.quantityOrdered - item.quantityReceived} restantes)`,
+            });
+          }
+
+          // Validate that the location belongs to the same product
+          const location = await tx.productLocation.findUnique({
+            where: { id: recv.locationId },
+            select: { productId: true },
+          });
+          if (!location) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: `Ubicación ${recv.locationId} no encontrada` });
+          }
+          if (location.productId !== item.productId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `La ubicación no pertenece al producto del ítem`,
+            });
+          }
 
           await tx.purchaseOrderItem.update({
             where: { id: recv.itemId },
@@ -166,11 +222,38 @@ export const purchasesRouter = createTRPCRouter({
             where: { id: recv.locationId },
             data: { quantityOnHand: { increment: recv.quantityReceived } },
           });
+
+          receivedSummary.push({ itemId: recv.itemId, productId: item.productId, quantityReceived: recv.quantityReceived });
         }
+
+        // Check if order is fully received after this batch
+        const updatedItems = await tx.purchaseOrderItem.findMany({
+          where: { purchaseOrderId: input.id },
+          select: { quantityOrdered: true, quantityReceived: true },
+        });
+        const fullyReceived = updatedItems.every((i) => i.quantityReceived >= i.quantityOrdered);
 
         await tx.purchaseOrder.update({
           where: { id: input.id },
-          data: { status: 'RECEIVED', receivedDate: new Date() },
+          data: {
+            status: fullyReceived ? 'RECEIVED' : 'IN_TRANSIT',
+            receivedDate: fullyReceived ? new Date() : undefined,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'RECEIVE',
+            entityType: 'PurchaseOrder',
+            entityId: input.id,
+            newValues: {
+              poNumber: order.poNumber,
+              itemsReceived: receivedSummary,
+              fullyReceived,
+            } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+          },
         });
       });
 

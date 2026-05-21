@@ -1,44 +1,51 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { glass } from '@/lib/ui';
 import {
   Plus, Search, Receipt, X, ChevronLeft, ChevronRight,
-  Eye, Trash2, DollarSign,
+  Eye, Trash2, DollarSign, ShieldCheck,
 } from 'lucide-react';
 
-const glass = {
-  backgroundColor: 'rgba(255,255,255,0.72)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: '1px solid rgba(255,255,255,0.85)',
-  boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
-} as React.CSSProperties;
-
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  DRAFT:   { bg: '#F1F5F9', text: '#475569', label: 'Borrador' },
-  ISSUED:  { bg: '#EFF6FF', text: '#1D4ED8', label: 'Emitida' },
-  PAID:    { bg: '#F0FDF4', text: '#166534', label: 'Pagada' },
-  PARTIAL: { bg: '#FEF9C3', text: '#854D0E', label: 'Pago Parcial' },
-  VOIDED:  { bg: '#FEF2F2', text: '#991B1B', label: 'Anulada' },
+  DRAFT:                  { bg: '#F1F5F9', text: '#475569', label: 'Borrador' },
+  ISSUED:                 { bg: '#EFF6FF', text: '#1D4ED8', label: 'Emitida' },
+  PAID:                   { bg: '#F0FDF4', text: '#166534', label: 'Pagada' },
+  PARTIAL:                { bg: '#FEF9C3', text: '#854D0E', label: 'Pago Parcial' },
+  VOIDED:                 { bg: '#FEF2F2', text: '#991B1B', label: 'Anulada' },
+  PENDING_AUTHORIZATION:  { bg: '#FFF7ED', text: '#C2410C', label: 'Pend. Autorización' },
+  CONVERTED:              { bg: '#F0F9FF', text: '#0369A1', label: 'Convertida' },
 };
 
-type LineItem = { productId: string; productName: string; quantity: string; unitPrice: string; discountPercent: string };
+type LineItem = {
+  productId: string;
+  productName: string;
+  quantity: string;
+  unitPrice: string;
+  discountPercent: string;
+  locationId: string;
+};
 
 export function InvoicingClient() {
+  const { data: session } = useSession();
+  const userRole = (session?.user as { role?: string })?.role ?? 'VENDOR';
+  const canAuthorize = userRole === 'ADMIN' || userRole === 'MANAGER';
+
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
-  const [modal, setModal] = useState<'none' | 'create' | 'detail' | 'payment' | 'void'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'detail' | 'payment' | 'void' | 'authorize'>('none');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   // Create invoice form
   const [customerId, setCustomerId] = useState('');
   const [lines, setLines] = useState<LineItem[]>([
-    { productId: '', productName: '', quantity: '1', unitPrice: '0', discountPercent: '0' },
+    { productId: '', productName: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '' },
   ]);
   const [notes, setNotes] = useState('');
 
@@ -50,20 +57,24 @@ export function InvoicingClient() {
   // Void form
   const [voidReason, setVoidReason] = useState('');
 
+  // Authorize form
+  const [authNotes, setAuthNotes] = useState('');
+
   const { data, isLoading, refetch } = trpc.invoicing.list.useQuery({
     search: search || undefined,
-    status: status as 'DRAFT' | 'ISSUED' | 'PAID' | 'PARTIAL' | 'VOIDED' | undefined || undefined,
+    status: status as 'DRAFT' | 'ISSUED' | 'PAID' | 'PARTIAL' | 'VOIDED' | 'PENDING_AUTHORIZATION' | 'CONVERTED' | undefined || undefined,
     page,
     pageSize: 20,
   });
 
   const { data: detail, refetch: refetchDetail } = trpc.invoicing.byId.useQuery(
     selectedId ?? '',
-    { enabled: !!selectedId && (modal === 'detail' || modal === 'payment' || modal === 'void') }
+    { enabled: !!selectedId && (modal === 'detail' || modal === 'payment' || modal === 'void' || modal === 'authorize') }
   );
 
   const { data: customers } = trpc.customers.list.useQuery({ pageSize: 200 });
   const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });
+  const { data: warehouses } = trpc.settings.warehouses.useQuery();
 
   const createMutation = trpc.invoicing.create.useMutation({
     onSuccess: () => { refetch(); closeModal(); },
@@ -80,14 +91,20 @@ export function InvoicingClient() {
     onError: (e) => setError(e.message),
   });
 
+  const authorizeMutation = trpc.invoicing.authorizeBackorder.useMutation({
+    onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
   function closeModal() {
     setModal('none'); setSelectedId(null); setError('');
-    setCustomerId(''); setLines([{ productId: '', productName: '', quantity: '1', unitPrice: '0', discountPercent: '0' }]);
-    setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef(''); setVoidReason('');
+    setCustomerId('');
+    setLines([{ productId: '', productName: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '' }]);
+    setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef(''); setVoidReason(''); setAuthNotes('');
   }
 
   function addLine() {
-    setLines(l => [...l, { productId: '', productName: '', quantity: '1', unitPrice: '0', discountPercent: '0' }]);
+    setLines(l => [...l, { productId: '', productName: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '' }]);
   }
 
   function updateLine(i: number, field: keyof LineItem, value: string) {
@@ -95,10 +112,23 @@ export function InvoicingClient() {
       if (idx !== i) return l;
       if (field === 'productId') {
         const p = products?.products.find((p) => p.id === value);
-        return { ...l, productId: value, productName: p?.name ?? '', unitPrice: p ? String(p.retailPrice) : '0' };
+        return { ...l, productId: value, productName: p?.name ?? '', unitPrice: p ? String(p.retailPrice) : '0', locationId: '' };
       }
       return { ...l, [field]: value };
     }));
+  }
+
+  function getLocationsForProduct(productId: string) {
+    if (!productId || !warehouses) return [];
+    return (warehouses ?? []).flatMap((wh) =>
+      wh.locations
+        .filter((loc) => (loc as { productId?: string }).productId === productId)
+        .map((loc) => ({
+          id: loc.id,
+          label: `${wh.name} — ${loc.locationCode}`,
+          available: loc.quantityOnHand - loc.reservedQuantity,
+        }))
+    );
   }
 
   function calcLine(line: LineItem) {
@@ -117,6 +147,8 @@ export function InvoicingClient() {
     if (!customerId) { setError('Selecciona un cliente'); return; }
     const validLines = lines.filter((l) => l.productId && parseInt(l.quantity) > 0);
     if (!validLines.length) { setError('Agrega al menos un producto'); return; }
+    const missingLocation = validLines.find((l) => !l.locationId);
+    if (missingLocation) { setError(`Selecciona la ubicación para "${missingLocation.productName}"`); return; }
 
     createMutation.mutate({
       customerId,
@@ -125,6 +157,7 @@ export function InvoicingClient() {
       notes: notes || undefined,
       items: validLines.map((l) => ({
         productId: l.productId,
+        locationId: l.locationId,
         quantity: parseInt(l.quantity),
         unitPrice: parseFloat(l.unitPrice),
         discountPercent: parseFloat(l.discountPercent) || 0,
@@ -180,8 +213,10 @@ export function InvoicingClient() {
           <option value="ISSUED">Emitidas</option>
           <option value="PAID">Pagadas</option>
           <option value="PARTIAL">Pago Parcial</option>
+          <option value="PENDING_AUTHORIZATION">Pend. Autorización</option>
           <option value="DRAFT">Borrador</option>
           <option value="VOIDED">Anuladas</option>
+          <option value="CONVERTED">Convertidas</option>
         </select>
       </div>
 
@@ -242,7 +277,13 @@ export function InvoicingClient() {
                               <DollarSign size={14} style={{ color: '#16A34A' }} />
                             </button>
                           )}
-                          {inv.status !== 'PAID' && inv.status !== 'VOIDED' && (
+                          {inv.status === 'PENDING_AUTHORIZATION' && canAuthorize && (
+                            <button onClick={() => { setSelectedId(inv.id); setModal('authorize'); setAuthNotes(''); }}
+                              className="p-1.5 rounded-lg hover:bg-orange-50" title="Autorizar backorder">
+                              <ShieldCheck size={14} style={{ color: brand.orange[500] }} />
+                            </button>
+                          )}
+                          {inv.status !== 'PAID' && inv.status !== 'VOIDED' && inv.status !== 'CONVERTED' && (
                             <button onClick={() => { setSelectedId(inv.id); setModal('void'); setVoidReason(''); }}
                               className="p-1.5 rounded-lg hover:bg-red-50" title="Anular">
                               <Trash2 size={14} style={{ color: '#DC2626' }} />
@@ -299,39 +340,60 @@ export function InvoicingClient() {
                   <label className="text-xs font-semibold" style={{ color: brand.navy[700] }}>Productos</label>
                   <button onClick={addLine} className="text-xs font-medium" style={{ color: brand.orange[500] }}>+ Agregar línea</button>
                 </div>
-                <div className="space-y-2">
-                  {lines.map((line, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                      <div className="col-span-5">
-                        <select value={line.productId} onChange={(e) => updateLine(i, 'productId', e.target.value)}
-                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }}>
-                          <option value="">Seleccionar producto</option>
-                          {products?.products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
-                        </select>
+                <div className="space-y-3">
+                  {lines.map((line, i) => {
+                    const locationOptions = getLocationsForProduct(line.productId);
+                    return (
+                      <div key={i} className="space-y-1.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                        <div className="grid grid-cols-12 gap-2 items-center">
+                          <div className="col-span-5">
+                            <select value={line.productId} onChange={(e) => updateLine(i, 'productId', e.target.value)}
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }}>
+                              <option value="">Seleccionar producto</option>
+                              {products?.products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', e.target.value)}
+                              placeholder="Cant." min="1"
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none text-center" style={{ color: brand.navy[900] }} />
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" value={line.unitPrice} onChange={(e) => updateLine(i, 'unitPrice', e.target.value)}
+                              placeholder="Precio"
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }} />
+                          </div>
+                          <div className="col-span-2">
+                            <input type="number" value={line.discountPercent} onChange={(e) => updateLine(i, 'discountPercent', e.target.value)}
+                              placeholder="Desc%"
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }} />
+                          </div>
+                          <div className="col-span-1 text-right">
+                            <button onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))}
+                              className="p-1 rounded hover:bg-red-50" disabled={lines.length === 1}>
+                              <X size={12} style={{ color: '#DC2626' }} />
+                            </button>
+                          </div>
+                        </div>
+                        {line.productId && (
+                          <div>
+                            <select value={line.locationId} onChange={(e) => updateLine(i, 'locationId', e.target.value)}
+                              className="w-full px-2 py-1.5 rounded-lg border text-xs outline-none"
+                              style={{ color: brand.navy[900], borderColor: !line.locationId ? '#FCA5A5' : '#E2E8F0' }}>
+                              <option value="">Seleccionar ubicación *</option>
+                              {locationOptions.length === 0 ? (
+                                <option disabled value="">Sin ubicaciones para este producto</option>
+                              ) : locationOptions.map((loc) => (
+                                <option key={loc.id} value={loc.id}>
+                                  {loc.label} ({loc.available} disponibles)
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
-                      <div className="col-span-2">
-                        <input type="number" value={line.quantity} onChange={(e) => updateLine(i, 'quantity', e.target.value)}
-                          placeholder="Cant." min="1"
-                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none text-center" style={{ color: brand.navy[900] }} />
-                      </div>
-                      <div className="col-span-2">
-                        <input type="number" value={line.unitPrice} onChange={(e) => updateLine(i, 'unitPrice', e.target.value)}
-                          placeholder="Precio"
-                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }} />
-                      </div>
-                      <div className="col-span-2">
-                        <input type="number" value={line.discountPercent} onChange={(e) => updateLine(i, 'discountPercent', e.target.value)}
-                          placeholder="Desc%"
-                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }} />
-                      </div>
-                      <div className="col-span-1 text-right">
-                        <button onClick={() => setLines(ls => ls.filter((_, idx) => idx !== i))}
-                          className="p-1 rounded hover:bg-red-50" disabled={lines.length === 1}>
-                          <X size={12} style={{ color: '#DC2626' }} />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -426,13 +488,22 @@ export function InvoicingClient() {
               </div>
             )}
 
-            {(detail.status === 'ISSUED' || detail.status === 'PARTIAL') && (
-              <button onClick={() => setModal('payment')}
-                className="w-full py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90"
-                style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
-                Registrar Pago
-              </button>
-            )}
+            <div className="flex gap-2">
+              {(detail.status === 'ISSUED' || detail.status === 'PARTIAL') && (
+                <button onClick={() => setModal('payment')}
+                  className="flex-1 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90"
+                  style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+                  Registrar Pago
+                </button>
+              )}
+              {detail.status === 'PENDING_AUTHORIZATION' && canAuthorize && (
+                <button onClick={() => setModal('authorize')}
+                  className="flex-1 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90"
+                  style={{ background: `linear-gradient(135deg, #059669, #047857)` }}>
+                  Autorizar Backorder
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -490,6 +561,40 @@ export function InvoicingClient() {
         </div>
       )}
 
+      {/* ── Authorize Modal ── */}
+      {modal === 'authorize' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-bold" style={{ color: '#059669' }}>Autorizar Backorder</h2>
+              <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
+            </div>
+            <p className="text-sm text-slate-500 mb-4">
+              Al autorizar, el stock se descontará aunque quede en negativo. Esta acción queda registrada en auditoría.
+            </p>
+            {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+            <div>
+              <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Justificación *</label>
+              <textarea value={authNotes} onChange={(e) => setAuthNotes(e.target.value)} rows={3}
+                placeholder="Motivo de autorización del backorder..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none resize-none" style={{ color: brand.navy[900] }} />
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+              <button
+                onClick={() => selectedId && authorizeMutation.mutate({ id: selectedId, authorizationNotes: authNotes })}
+                disabled={!authNotes.trim() || authorizeMutation.isPending}
+                className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ background: '#059669' }}>
+                {authorizeMutation.isPending ? 'Autorizando...' : 'Autorizar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Void Modal ── */}
       {modal === 'void' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -517,4 +622,3 @@ export function InvoicingClient() {
     </div>
   );
 }
-

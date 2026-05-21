@@ -21,9 +21,16 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const publicProcedure = t.procedure;
 
-const enforceUserIsAuthed = t.middleware(({ ctx, next }) => {
+const enforceUserIsAuthed = t.middleware(async ({ ctx, next }) => {
   if (!ctx.session || !ctx.session.user) {
     throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  const dbUser = await ctx.db.user.findUnique({
+    where: { id: ctx.session.user.id },
+    select: { isActive: true },
+  });
+  if (!dbUser?.isActive) {
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Usuario desactivado' });
   }
   return next({
     ctx: {
@@ -46,3 +53,16 @@ const enforceUserIsAdmin = t.middleware(({ ctx, next }) => {
 });
 
 export const adminProcedure = t.procedure.use(enforceUserIsAdmin);
+
+const enforceUserIsManagerOrAdmin = t.middleware(({ ctx, next }) => {
+  if (!ctx.session?.user) {
+    throw new TRPCError({ code: 'UNAUTHORIZED' });
+  }
+  const role = (ctx.session.user as { role?: string }).role;
+  if (role !== 'ADMIN' && role !== 'MANAGER') {
+    throw new TRPCError({ code: 'FORBIDDEN' });
+  }
+  return next({ ctx: { session: ctx.session } });
+});
+
+export const managerProcedure = t.procedure.use(enforceUserIsManagerOrAdmin);

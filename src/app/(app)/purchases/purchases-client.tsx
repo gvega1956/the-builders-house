@@ -4,15 +4,8 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Plus, Truck, X, Eye, ChevronRight, ChevronLeft, Package } from 'lucide-react';
-
-const glass = {
-  backgroundColor: 'rgba(255,255,255,0.72)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: '1px solid rgba(255,255,255,0.85)',
-  boxShadow: '0 4px 24px rgba(10,22,40,0.07)',
-} as React.CSSProperties;
+import { Plus, Truck, X, Eye, ChevronRight, ChevronLeft } from 'lucide-react';
+import { glass } from '@/lib/ui';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   DRAFT:      { bg: '#F1F5F9', text: '#475569', label: 'Borrador' },
@@ -31,9 +24,10 @@ type POLine = { productId: string; quantityOrdered: string; unitCostUsd: string 
 export function PurchasesClient() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [modal, setModal] = useState<'none' | 'create' | 'detail'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'detail' | 'confirm'>('none');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [confirmAction, setConfirmAction] = useState<{ id: string; currentStatus: string; nextStatus: string } | null>(null);
 
   // Create form
   const [supplierId, setSupplierId] = useState('');
@@ -64,13 +58,27 @@ export function PurchasesClient() {
 
   const statusMutation = trpc.purchases.updateStatus.useMutation({
     onSuccess: () => { refetch(); refetchDetail(); },
-    onError: (e) => alert(e.message),
+    onError: (e) => setError(e.message),
   });
 
   function closeModal() {
-    setModal('none'); setSelectedId(null); setError('');
+    setModal('none'); setSelectedId(null); setError(''); setConfirmAction(null);
     setSupplierId(''); setLines([{ productId: '', quantityOrdered: '1', unitCostUsd: '0' }]);
     setFreight('0'); setCustoms('0'); setExchangeRate(''); setNotes('');
+  }
+
+  function requestStatusChange(id: string, currentStatus: string, nextStatus: string) {
+    setConfirmAction({ id, currentStatus, nextStatus });
+    setModal('confirm');
+    setError('');
+  }
+
+  function confirmStatusChange() {
+    if (!confirmAction) return;
+    statusMutation.mutate(
+      { id: confirmAction.id, status: confirmAction.nextStatus as 'DRAFT' | 'SENT' | 'IN_TRANSIT' | 'RECEIVED' | 'CLOSED' },
+      { onSuccess: closeModal }
+    );
   }
 
   function addLine() { setLines(l => [...l, { productId: '', quantityOrdered: '1', unitCostUsd: '0' }]); }
@@ -188,7 +196,7 @@ export function PurchasesClient() {
                           </button>
                           {next && (
                             <button
-                              onClick={() => statusMutation.mutate({ id: o.id, status: next as 'DRAFT' | 'SENT' | 'IN_TRANSIT' | 'RECEIVED' | 'CLOSED' })}
+                              onClick={() => requestStatusChange(o.id, o.status, next)}
                               className="p-1.5 rounded-lg hover:bg-green-50 text-xs font-medium"
                               title={`Avanzar a ${STATUS_STYLES[next]?.label}`}
                               style={{ color: '#16A34A' }}
@@ -215,6 +223,38 @@ export function PurchasesClient() {
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronLeft size={16} /></button>
             <span className="px-3 py-1 rounded-lg bg-white/60 border">{page} / {totalPages}</span>
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      )}
+
+      {/* Status error banner */}
+      {error && modal === 'none' && (
+        <div className="px-4 py-3 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="ml-3 hover:opacity-70"><X size={14} /></button>
+        </div>
+      )}
+
+      {/* Confirm Status Modal */}
+      {modal === 'confirm' && confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <h2 className="text-base font-bold mb-2" style={{ color: brand.navy[950] }}>Confirmar avance</h2>
+            <p className="text-sm text-slate-500 mb-5">
+              ¿Confirmar avance de <strong>{STATUS_STYLES[confirmAction.currentStatus]?.label}</strong> a{' '}
+              <strong>{STATUS_STYLES[confirmAction.nextStatus]?.label}</strong>?
+            </p>
+            {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+              <button onClick={confirmStatusChange} disabled={statusMutation.isPending}
+                className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+                {statusMutation.isPending ? 'Procesando...' : 'Confirmar'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -377,7 +417,7 @@ export function PurchasesClient() {
               <button
                 onClick={() => {
                   const next = STATUS_ORDER[detail.status];
-                  if (next) statusMutation.mutate({ id: detail.id, status: next as 'DRAFT' | 'SENT' | 'IN_TRANSIT' | 'RECEIVED' | 'CLOSED' });
+                  if (next) requestStatusChange(detail.id, detail.status, next);
                 }}
                 className="w-full mt-4 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90"
                 style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>

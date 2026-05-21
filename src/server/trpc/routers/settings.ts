@@ -1,12 +1,12 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure, adminProcedure } from '@/server/trpc';
+import { createTRPCRouter, protectedProcedure, adminProcedure, managerProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
 import bcryptjs from 'bcryptjs';
 
 export const settingsRouter = createTRPCRouter({
   // ── Users ───────────────────────────────────────────────────────────────
-  users: protectedProcedure.query(async ({ ctx }) => {
+  users: managerProcedure.query(async ({ ctx }) => {
     return ctx.db.user.findMany({
       select: {
         id: true,
@@ -116,7 +116,17 @@ export const settingsRouter = createTRPCRouter({
         where: { OR: [{ name: input.name }, { slug: input.slug }] },
       });
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Categoría ya existe' });
-      return ctx.db.category.create({ data: input });
+      const category = await ctx.db.category.create({ data: input });
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'CREATE_CATEGORY',
+          entityType: 'Category',
+          entityId: category.id,
+          newValues: { name: input.name, slug: input.slug } as Prisma.InputJsonValue,
+        },
+      });
+      return category;
     }),
 
   // ── Warehouses ──────────────────────────────────────────────────────────
@@ -136,7 +146,17 @@ export const settingsRouter = createTRPCRouter({
   createWarehouse: protectedProcedure
     .input(z.object({ name: z.string().min(1), address: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.warehouse.create({ data: input });
+      const warehouse = await ctx.db.warehouse.create({ data: input });
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'CREATE_WAREHOUSE',
+          entityType: 'Warehouse',
+          entityId: warehouse.id,
+          newValues: { name: input.name, address: input.address ?? null } as Prisma.InputJsonValue,
+        },
+      });
+      return warehouse;
     }),
 
   // ── Suppliers ────────────────────────────────────────────────────────────
@@ -162,9 +182,19 @@ export const settingsRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.supplier.create({
+      const supplier = await ctx.db.supplier.create({
         data: { ...input, contactEmail: input.contactEmail || undefined },
       });
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'CREATE_SUPPLIER',
+          entityType: 'Supplier',
+          entityId: supplier.id,
+          newValues: { name: input.name, country: input.country } as Prisma.InputJsonValue,
+        },
+      });
+      return supplier;
     }),
 
   updateSupplier: protectedProcedure
@@ -183,9 +213,83 @@ export const settingsRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      return ctx.db.supplier.update({
+      const previous = await ctx.db.supplier.findUnique({ where: { id: input.id } });
+      const updated = await ctx.db.supplier.update({
         where: { id: input.id },
         data: { ...input.data, contactEmail: input.data.contactEmail || undefined },
       });
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE_SUPPLIER',
+          entityType: 'Supplier',
+          entityId: input.id,
+          oldValues: previous as unknown as Prisma.InputJsonValue,
+          newValues: input.data as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return updated;
+    }),
+
+  createProductLocation: protectedProcedure
+    .input(
+      z.object({
+        warehouseId: z.string().cuid(),
+        productId: z.string().cuid(),
+        locationCode: z.string().min(1),
+        quantityOnHand: z.number().int().min(0).default(0),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.db.productLocation.findFirst({
+        where: { warehouseId: input.warehouseId, productId: input.productId },
+      });
+      if (existing) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Ya existe una ubicación para este producto en este almacén' });
+      }
+
+      const location = await ctx.db.$transaction(async (tx) => {
+        const loc = await tx.productLocation.create({
+          data: {
+            warehouseId: input.warehouseId,
+            productId: input.productId,
+            locationCode: input.locationCode,
+            quantityOnHand: input.quantityOnHand,
+          },
+        });
+
+        if (input.quantityOnHand > 0) {
+          await tx.inventoryMovement.create({
+            data: {
+              productId: input.productId,
+              locationId: loc.id,
+              movementType: 'IN',
+              quantity: input.quantityOnHand,
+              referenceType: 'ADJUSTMENT',
+              referenceId: 'INITIAL_STOCK',
+              userId: ctx.session!.user!.id!,
+            },
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'CREATE_PRODUCT_LOCATION',
+            entityType: 'ProductLocation',
+            entityId: loc.id,
+            newValues: {
+              warehouseId: input.warehouseId,
+              productId: input.productId,
+              locationCode: input.locationCode,
+              quantityOnHand: input.quantityOnHand,
+            } as Prisma.InputJsonValue,
+          },
+        });
+
+        return loc;
+      });
+
+      return location;
     }),
 });

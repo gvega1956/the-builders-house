@@ -120,6 +120,12 @@ export const productsRouter = createTRPCRouter({
   create: protectedProcedure
     .input(productCreateSchema)
     .mutation(async ({ ctx, input }) => {
+      if (input.retailPrice < input.unitCost) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El precio retail no puede ser menor al costo unitario' });
+      }
+      if (input.wholesalePrice < input.unitCost) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El precio mayoreo no puede ser menor al costo unitario' });
+      }
       const existing = await ctx.db.product.findUnique({ where: { sku: input.sku } });
       if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'SKU ya existe' });
 
@@ -151,6 +157,14 @@ export const productsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const before = await ctx.db.product.findUnique({ where: { id: input.id } });
       if (!before) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      const unitCost = input.data.unitCost ?? Number(before.unitCost);
+      if (input.data.retailPrice !== undefined && input.data.retailPrice < unitCost) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El precio retail no puede ser menor al costo unitario' });
+      }
+      if (input.data.wholesalePrice !== undefined && input.data.wholesalePrice < unitCost) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El precio mayoreo no puede ser menor al costo unitario' });
+      }
 
       const updated = await ctx.db.product.update({
         where: { id: input.id },
