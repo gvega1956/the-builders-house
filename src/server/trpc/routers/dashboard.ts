@@ -63,8 +63,8 @@ export const dashboardRouter = createTRPCRouter({
             JOIN products p ON p.id = ii."productId"
             WHERE inv.type = 'INVOICE'
               AND inv.status IN ('PAID', 'PARTIAL', 'ISSUED')
-              AND inv.created_at >= ${from}
-              AND inv.created_at <= ${to}
+              AND inv."createdAt" >= ${from}
+              AND inv."createdAt" <= ${to}
           `,
           ctx.db.inventoryMovement.findMany({
             orderBy: { createdAt: 'desc' },
@@ -115,13 +115,13 @@ export const dashboardRouter = createTRPCRouter({
 
       const rows = await ctx.db.$queryRaw<Array<{ day: Date; total: number }>>`
         SELECT
-          DATE(created_at) AS day,
+          DATE("createdAt") AS day,
           SUM(total)::float8 AS total
         FROM invoices
         WHERE type = 'INVOICE'
           AND status IN ('PAID', 'PARTIAL', 'ISSUED')
-          AND created_at >= ${from}
-        GROUP BY DATE(created_at)
+          AND "createdAt" >= ${from}
+        GROUP BY DATE("createdAt")
         ORDER BY day ASC
       `;
 
