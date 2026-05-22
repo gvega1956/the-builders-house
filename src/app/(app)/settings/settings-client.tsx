@@ -190,13 +190,21 @@ export function SettingsClient() {
                           style={{ color: brand.navy[700] }}>
                           <Pencil size={11} /> Editar
                         </button>
-                        <button
-                          onClick={() => { setToggleError((p) => { const n = { ...p }; delete n[u.id]; return n; }); updateUser.mutate({ id: u.id, data: { isActive: !u.isActive } }); }}
-                          disabled={updateUser.isPending}
-                          className="text-xs px-2 py-1 rounded-lg border hover:bg-slate-50 disabled:opacity-50"
-                          style={{ color: '#64748B' }}>
-                          {u.isActive ? 'Desactivar' : 'Activar'}
-                        </button>
+                        {toggleError[u.id] ? (
+                          <button
+                            onClick={() => setToggleError((p) => { const n = { ...p }; delete n[u.id]; return n; })}
+                            className="text-xs px-2 py-1 rounded-lg border border-red-200 bg-red-50 text-red-600 hover:bg-red-100">
+                            ✕ Descartar
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => updateUser.mutate({ id: u.id, data: { isActive: !u.isActive } })}
+                            disabled={updateUser.isPending}
+                            className="text-xs px-2 py-1 rounded-lg border hover:bg-slate-50 disabled:opacity-50"
+                            style={{ color: '#64748B' }}>
+                            {u.isActive ? 'Desactivar' : 'Activar'}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
