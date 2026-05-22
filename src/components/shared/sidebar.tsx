@@ -84,7 +84,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
 
   return (
     <aside
-      className="w-64 flex flex-col flex-shrink-0"
+      className="w-64 flex flex-col shrink-0"
       style={{
           backgroundColor: 'rgba(10,22,40,0.92)',
           backdropFilter: 'blur(20px)',
@@ -125,7 +125,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
       <div className="p-3 border-t" style={{ borderColor: brand.navy[800] }}>
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/5 cursor-pointer">
           <div
-            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
             style={{
               background: `linear-gradient(135deg, ${brand.orange[500]} 0%, ${brand.orange[600]} 100%)`,
             }}
