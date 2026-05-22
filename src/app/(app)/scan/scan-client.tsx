@@ -137,7 +137,7 @@ export function ScanClient() {
           {/* Product Card */}
           <div style={glass} className="rounded-2xl p-5">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
                 style={{ background: `linear-gradient(135deg, ${brand.orange[50]}, ${brand.orange[100]})` }}>
                 <Package size={22} style={{ color: brand.orange[500] }} />
               </div>

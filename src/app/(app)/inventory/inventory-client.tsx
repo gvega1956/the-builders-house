@@ -417,7 +417,7 @@ export function InventoryClient() {
                   onChange={(e) => setStockQty(e.target.value)}
                   placeholder={stockMode === 'IN' ? '10' : '-1'}
                   autoFocus
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none text-center font-bold text-lg"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 outline-none text-center font-bold text-lg"
                   style={{ color: brand.navy[900] }}
                 />
               </div>
