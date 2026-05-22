@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatDate } from '@/lib/utils';
@@ -20,9 +19,7 @@ function getCountStatus(count: { completedAt: Date | null; scheduledDate: Date }
   return 'pending';
 }
 
-export function CycleCountsClient() {
-  const { data: session } = useSession();
-  const role = (session?.user as { role?: string })?.role ?? 'VENDOR';
+export function CycleCountsClient({ role }: { role: string }) {
   const canAssign = role === 'ADMIN' || role === 'MANAGER';
 
   const [showCompleted, setShowCompleted] = useState(false);

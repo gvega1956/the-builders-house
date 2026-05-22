@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useSession } from 'next-auth/react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -30,10 +29,8 @@ type LineItem = {
   locationId: string;
 };
 
-export function InvoicingClient() {
-  const { data: session } = useSession();
-  const userRole = (session?.user as { role?: string })?.role ?? 'VENDOR';
-  const canAuthorize = userRole === 'ADMIN' || userRole === 'MANAGER';
+export function InvoicingClient({ role }: { role: string }) {
+  const canAuthorize = role === 'ADMIN' || role === 'MANAGER';
 
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
