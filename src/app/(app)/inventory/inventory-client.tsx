@@ -6,7 +6,7 @@ import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 import {
   Plus, Search, AlertTriangle, Package, X, ChevronLeft, ChevronRight,
-  Edit2, Filter,
+  Edit2, Filter, PackagePlus,
 } from 'lucide-react';
 
 const glass = {
@@ -33,10 +33,15 @@ export function InventoryClient() {
   const [categoryId, setCategoryId] = useState('');
   const [lowStock, setLowStock] = useState(false);
   const [page, setPage] = useState(1);
-  const [modal, setModal] = useState<'none' | 'create' | 'edit'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'stock'>('none');
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [error, setError] = useState('');
+
+  // Stock entry state
+  const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId: string } | null>(null);
+  const [stockQty, setStockQty] = useState('');
+  const [stockNotes, setStockNotes] = useState('');
 
   const { data, isLoading, refetch } = trpc.products.list.useQuery({
     search: search || undefined,
@@ -58,11 +63,42 @@ export function InventoryClient() {
     onError: (e) => setError(e.message),
   });
 
+  const stockIn = trpc.movements.create.useMutation({
+    onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
   function closeModal() {
     setModal('none');
     setEditId(null);
     setForm(emptyForm);
     setError('');
+    setStockProduct(null);
+    setStockQty('');
+    setStockNotes('');
+  }
+
+  function openStockModal(p: NonNullable<typeof data>['products'][0]) {
+    if (!p.locations[0]) return;
+    setStockProduct({ id: p.id, sku: p.sku, name: p.name, locationId: p.locations[0].id });
+    setStockQty('');
+    setStockNotes('');
+    setError('');
+    setModal('stock');
+  }
+
+  function handleStockSubmit() {
+    if (!stockProduct) return;
+    const qty = parseInt(stockQty);
+    if (!qty || qty <= 0) { setError('Ingresa una cantidad válida mayor a 0'); return; }
+    stockIn.mutate({
+      productId: stockProduct.id,
+      locationId: stockProduct.locationId,
+      movementType: 'IN',
+      quantity: qty,
+      referenceType: 'PURCHASE_ORDER',
+      notes: stockNotes || undefined,
+    });
   }
 
   function openEdit(p: NonNullable<typeof data>['products'][0]) {
@@ -254,13 +290,22 @@ export function InventoryClient() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <button
-                          onClick={() => openEdit(p)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-                          title="Editar"
-                        >
-                          <Edit2 size={14} style={{ color: brand.navy[600] }} />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openStockModal(p)}
+                            className="p-1.5 rounded-lg hover:bg-green-50 transition-colors"
+                            title="Entrada de stock"
+                          >
+                            <PackagePlus size={14} style={{ color: '#16A34A' }} />
+                          </button>
+                          <button
+                            onClick={() => openEdit(p)}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                            title="Editar producto"
+                          >
+                            <Edit2 size={14} style={{ color: brand.navy[600] }} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -297,8 +342,82 @@ export function InventoryClient() {
         </div>
       )}
 
-      {/* Modal */}
-      {modal !== 'none' && (
+      {/* Modal — Entrada de Stock */}
+      {modal === 'stock' && stockProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <PackagePlus size={18} style={{ color: '#16A34A' }} />
+                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>Entrada de Stock</h2>
+              </div>
+              <button onClick={closeModal} className="p-1 rounded-lg hover:bg-slate-100">
+                <X size={18} style={{ color: '#64748B' }} />
+              </button>
+            </div>
+
+            <div className="mb-4 px-3 py-2 rounded-xl text-sm" style={{ backgroundColor: 'rgba(10,22,40,0.04)' }}>
+              <div className="font-mono text-xs font-bold" style={{ color: brand.orange[500] }}>{stockProduct.sku}</div>
+              <div className="font-medium mt-0.5" style={{ color: brand.navy[900] }}>{stockProduct.name}</div>
+            </div>
+
+            {error && (
+              <div className="mb-3 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>
+            )}
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                  Cantidad a ingresar *
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={stockQty}
+                  onChange={(e) => setStockQty(e.target.value)}
+                  placeholder="0"
+                  autoFocus
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none text-center font-bold text-lg"
+                  style={{ color: brand.navy[900] }}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                  Notas (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={stockNotes}
+                  onChange={(e) => setStockNotes(e.target.value)}
+                  placeholder="Ej: Recepción PO-001, conteo físico..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none"
+                  style={{ color: brand.navy[900] }}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button onClick={closeModal}
+                className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50"
+                style={{ color: '#64748B' }}>
+                Cancelar
+              </button>
+              <button
+                onClick={handleStockSubmit}
+                disabled={stockIn.isPending || !stockQty}
+                className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ background: `linear-gradient(135deg, #16A34A, #15803D)` }}>
+                {stockIn.isPending ? 'Guardando...' : 'Registrar Entrada'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Crear / Editar Producto */}
+      {modal !== 'none' && modal !== 'stock' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/30"
