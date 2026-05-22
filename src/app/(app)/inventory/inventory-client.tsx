@@ -6,7 +6,7 @@ import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 import {
   Plus, Search, AlertTriangle, Package, X, ChevronLeft, ChevronRight,
-  Edit2, Filter, PackagePlus,
+  Edit2, Filter, PackagePlus, ArrowLeftRight,
 } from 'lucide-react';
 
 const glass = {
@@ -38,8 +38,9 @@ export function InventoryClient() {
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [error, setError] = useState('');
 
-  // Stock entry state
-  const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId: string } | null>(null);
+  // Stock entry / adjustment state
+  const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId: string; currentStock: number } | null>(null);
+  const [stockMode, setStockMode] = useState<'IN' | 'ADJUSTMENT'>('IN');
   const [stockQty, setStockQty] = useState('');
   const [stockNotes, setStockNotes] = useState('');
 
@@ -74,13 +75,15 @@ export function InventoryClient() {
     setForm(emptyForm);
     setError('');
     setStockProduct(null);
+    setStockMode('IN');
     setStockQty('');
     setStockNotes('');
   }
 
-  function openStockModal(p: NonNullable<typeof data>['products'][0]) {
+  function openStockModal(p: NonNullable<typeof data>['products'][0], mode: 'IN' | 'ADJUSTMENT' = 'IN') {
     if (!p.locations[0]) return;
-    setStockProduct({ id: p.id, sku: p.sku, name: p.name, locationId: p.locations[0].id });
+    setStockProduct({ id: p.id, sku: p.sku, name: p.name, locationId: p.locations[0].id, currentStock: p.totalStock });
+    setStockMode(mode);
     setStockQty('');
     setStockNotes('');
     setError('');
@@ -89,16 +92,30 @@ export function InventoryClient() {
 
   function handleStockSubmit() {
     if (!stockProduct) return;
-    const qty = parseInt(stockQty);
-    if (!qty || qty <= 0) { setError('Ingresa una cantidad válida mayor a 0'); return; }
-    stockIn.mutate({
-      productId: stockProduct.id,
-      locationId: stockProduct.locationId,
-      movementType: 'IN',
-      quantity: qty,
-      referenceType: 'PURCHASE_ORDER',
-      notes: stockNotes || undefined,
-    });
+    const raw = parseInt(stockQty);
+    if (!raw || raw === 0) { setError('Ingresa una cantidad distinta de 0'); return; }
+
+    if (stockMode === 'IN') {
+      if (raw < 0) { setError('Para entradas usa cantidad positiva. Para correcciones usa el botón de ajuste.'); return; }
+      stockIn.mutate({
+        productId: stockProduct.id,
+        locationId: stockProduct.locationId,
+        movementType: 'IN',
+        quantity: raw,
+        referenceType: 'PURCHASE_ORDER',
+        notes: stockNotes || undefined,
+      });
+    } else {
+      // ADJUSTMENT — acepta positivo (corrección hacia arriba) o negativo (corrección hacia abajo)
+      stockIn.mutate({
+        productId: stockProduct.id,
+        locationId: stockProduct.locationId,
+        movementType: 'ADJUSTMENT',
+        quantity: raw,
+        referenceType: 'ADJUSTMENT',
+        notes: stockNotes || 'Ajuste manual',
+      });
+    }
   }
 
   function openEdit(p: NonNullable<typeof data>['products'][0]) {
@@ -292,11 +309,18 @@ export function InventoryClient() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => openStockModal(p)}
+                            onClick={() => openStockModal(p, 'IN')}
                             className="p-1.5 rounded-lg hover:bg-green-50 transition-colors"
                             title="Entrada de stock"
                           >
                             <PackagePlus size={14} style={{ color: '#16A34A' }} />
+                          </button>
+                          <button
+                            onClick={() => openStockModal(p, 'ADJUSTMENT')}
+                            className="p-1.5 rounded-lg hover:bg-amber-50 transition-colors"
+                            title="Ajuste / corrección de stock"
+                          >
+                            <ArrowLeftRight size={14} style={{ color: '#D97706' }} />
                           </button>
                           <button
                             onClick={() => openEdit(p)}
@@ -342,16 +366,21 @@ export function InventoryClient() {
         </div>
       )}
 
-      {/* Modal — Entrada de Stock */}
+      {/* Modal — Entrada de Stock / Ajuste */}
       {modal === 'stock' && stockProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
           <div className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
             style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <PackagePlus size={18} style={{ color: '#16A34A' }} />
-                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>Entrada de Stock</h2>
+                {stockMode === 'IN'
+                  ? <PackagePlus size={18} style={{ color: '#16A34A' }} />
+                  : <ArrowLeftRight size={18} style={{ color: '#D97706' }} />}
+                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
+                  {stockMode === 'IN' ? 'Entrada de Stock' : 'Ajuste de Stock'}
+                </h2>
               </div>
               <button onClick={closeModal} className="p-1 rounded-lg hover:bg-slate-100">
                 <X size={18} style={{ color: '#64748B' }} />
@@ -361,7 +390,17 @@ export function InventoryClient() {
             <div className="mb-4 px-3 py-2 rounded-xl text-sm" style={{ backgroundColor: 'rgba(10,22,40,0.04)' }}>
               <div className="font-mono text-xs font-bold" style={{ color: brand.orange[500] }}>{stockProduct.sku}</div>
               <div className="font-medium mt-0.5" style={{ color: brand.navy[900] }}>{stockProduct.name}</div>
+              <div className="text-xs mt-1" style={{ color: '#64748B' }}>
+                Stock actual: <span className="font-semibold" style={{ color: brand.navy[800] }}>{stockProduct.currentStock}</span> unidades
+              </div>
             </div>
+
+            {stockMode === 'ADJUSTMENT' && (
+              <div className="mb-3 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
+                Usa número <strong>negativo</strong> para restar unidades (ej: -3 para corregir una entrada errónea).<br />
+                Usa número <strong>positivo</strong> para sumar sin registrar una compra formal.
+              </div>
+            )}
 
             {error && (
               <div className="mb-3 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>
@@ -370,14 +409,13 @@ export function InventoryClient() {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
-                  Cantidad a ingresar *
+                  {stockMode === 'IN' ? 'Cantidad a ingresar *' : 'Ajuste (+ sumar · − restar) *'}
                 </label>
                 <input
                   type="number"
-                  min="1"
                   value={stockQty}
                   onChange={(e) => setStockQty(e.target.value)}
-                  placeholder="0"
+                  placeholder={stockMode === 'IN' ? '10' : '-1'}
                   autoFocus
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none text-center font-bold text-lg"
                   style={{ color: brand.navy[900] }}
@@ -385,13 +423,13 @@ export function InventoryClient() {
               </div>
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
-                  Notas (opcional)
+                  Motivo {stockMode === 'ADJUSTMENT' ? '*' : '(opcional)'}
                 </label>
                 <input
                   type="text"
                   value={stockNotes}
                   onChange={(e) => setStockNotes(e.target.value)}
-                  placeholder="Ej: Recepción PO-001, conteo físico..."
+                  placeholder={stockMode === 'IN' ? 'Ej: Recepción PO-001...' : 'Ej: Corrección entrada errónea...'}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none"
                   style={{ color: brand.navy[900] }}
                 />
@@ -408,8 +446,10 @@ export function InventoryClient() {
                 onClick={handleStockSubmit}
                 disabled={stockIn.isPending || !stockQty}
                 className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
-                style={{ background: `linear-gradient(135deg, #16A34A, #15803D)` }}>
-                {stockIn.isPending ? 'Guardando...' : 'Registrar Entrada'}
+                style={{ background: stockMode === 'IN'
+                  ? 'linear-gradient(135deg, #16A34A, #15803D)'
+                  : 'linear-gradient(135deg, #D97706, #B45309)' }}>
+                {stockIn.isPending ? 'Guardando...' : stockMode === 'IN' ? 'Registrar Entrada' : 'Aplicar Ajuste'}
               </button>
             </div>
           </div>
