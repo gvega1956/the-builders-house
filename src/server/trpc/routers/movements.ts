@@ -130,14 +130,9 @@ export const movementsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { movementType, photoUrl, destinationLocationId } = input;
 
-      // Photo validation — no DB needed, stays outside transaction
-      const requiresPhoto = ['OUT', 'DAMAGE', 'ADJUSTMENT'].includes(movementType);
-      if (requiresPhoto && !photoUrl) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Los movimientos de tipo ${movementType} requieren foto obligatoria`,
-        });
-      }
+      // Photo validation deshabilitada temporalmente — re-habilitar en Sprint 3 (sistema anti-robo)
+      // const requiresPhoto = ['OUT', 'DAMAGE', 'ADJUSTMENT'].includes(movementType);
+      // if (requiresPhoto && !photoUrl) { throw new TRPCError(...) }
 
       // TRANSFER: dos movimientos atómicos (OUT en origen, IN en destino) con el mismo referenceId
       if (movementType === 'TRANSFER') {
