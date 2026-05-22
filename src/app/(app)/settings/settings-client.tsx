@@ -5,7 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
-import { Plus, X, Users, Tag, Warehouse, Truck } from 'lucide-react';
+import { Plus, X, Users, Tag, Warehouse, Truck, Pencil } from 'lucide-react';
 
 const TABS = [
   { id: 'users', label: 'Usuarios', icon: Users },
@@ -29,9 +29,15 @@ export function SettingsClient() {
   const [modal, setModal] = useState('');
   const [error, setError] = useState('');
 
-  // Users
+  // Users — create
   const [uName, setUName] = useState(''); const [uEmail, setUEmail] = useState('');
   const [uPass, setUPass] = useState(''); const [uRole, setURole] = useState('VENDOR');
+
+  // Users — edit
+  const [editUserId, setEditUserId] = useState('');
+  const [editUserName, setEditUserName] = useState('');
+  const [editUserRole, setEditUserRole] = useState('VENDOR');
+  const [toggleError, setToggleError] = useState<Record<string, string>>({});
 
   // Categories
   const [catName, setCatName] = useState(''); const [catSlug, setCatSlug] = useState('');
@@ -74,16 +80,32 @@ export function SettingsClient() {
     onError: (e) => setError(e.message),
   });
   const updateUser = trpc.settings.updateUser.useMutation({
-    onSuccess: () => { refetchUsers(); },
+    onSuccess: () => { refetchUsers(); closeModal(); setToggleError({}); },
+    onError: (e, vars) => {
+      if (modal === 'editUser') {
+        setError(e.message);
+      } else {
+        setToggleError((prev) => ({ ...prev, [vars.id]: e.message }));
+      }
+    },
   });
   const createProductLoc = trpc.settings.createProductLocation.useMutation({
     onSuccess: () => { refetchWh(); closeModal(); },
     onError: (e) => setError(e.message),
   });
 
+  function openEditUser(u: { id: string; name: string; role: string }) {
+    setEditUserId(u.id);
+    setEditUserName(u.name);
+    setEditUserRole(u.role);
+    setError('');
+    setModal('editUser');
+  }
+
   function closeModal() {
     setModal(''); setError('');
     setUName(''); setUEmail(''); setUPass(''); setURole('VENDOR');
+    setEditUserId(''); setEditUserName(''); setEditUserRole('VENDOR');
     setCatName(''); setCatSlug('');
     setWhName(''); setWhAddr('');
     setSupName(''); setSupCountry('DO'); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupTerms('');
@@ -138,36 +160,54 @@ export function SettingsClient() {
             </thead>
             <tbody>
               {users?.map((u, i) => (
-                <tr key={u.id} style={{
-                  borderBottom: i < (users.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none',
-                  backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
-                }}>
-                  <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{u.name}</td>
-                  <td className="px-5 py-3 text-slate-500">{u.email}</td>
-                  <td className="px-5 py-3">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                      style={{ backgroundColor: u.role === 'ADMIN' ? brand.orange[50] : '#F1F5F9', color: u.role === 'ADMIN' ? brand.orange[600] : '#475569' }}>
-                      {ROLES[u.role] ?? u.role}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                      style={{ backgroundColor: u.isActive ? '#F0FDF4' : '#FEF2F2', color: u.isActive ? '#166534' : '#991B1B' }}>
-                      {u.isActive ? 'Activo' : 'Inactivo'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-slate-400 text-xs">
-                    {u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Nunca'}
-                  </td>
-                  <td className="px-5 py-3">
-                    <button
-                      onClick={() => updateUser.mutate({ id: u.id, data: { isActive: !u.isActive } })}
-                      className="text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
-                      style={{ color: '#64748B' }}>
-                      {u.isActive ? 'Desactivar' : 'Activar'}
-                    </button>
-                  </td>
-                </tr>
+                <React.Fragment key={u.id}>
+                  <tr style={{
+                    borderBottom: toggleError[u.id] ? 'none' : i < (users.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none',
+                    backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
+                  }}>
+                    <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{u.name}</td>
+                    <td className="px-5 py-3 text-slate-500">{u.email}</td>
+                    <td className="px-5 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{ backgroundColor: u.role === 'ADMIN' ? brand.orange[50] : '#F1F5F9', color: u.role === 'ADMIN' ? brand.orange[600] : '#475569' }}>
+                        {ROLES[u.role] ?? u.role}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{ backgroundColor: u.isActive ? '#F0FDF4' : '#FEF2F2', color: u.isActive ? '#166534' : '#991B1B' }}>
+                        {u.isActive ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-slate-400 text-xs">
+                      {u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Nunca'}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => openEditUser(u)}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
+                          style={{ color: brand.navy[700] }}>
+                          <Pencil size={11} /> Editar
+                        </button>
+                        <button
+                          onClick={() => { setToggleError((p) => { const n = { ...p }; delete n[u.id]; return n; }); updateUser.mutate({ id: u.id, data: { isActive: !u.isActive } }); }}
+                          disabled={updateUser.isPending}
+                          className="text-xs px-2 py-1 rounded-lg border hover:bg-slate-50 disabled:opacity-50"
+                          style={{ color: '#64748B' }}>
+                          {u.isActive ? 'Desactivar' : 'Activar'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {toggleError[u.id] && (
+                    <tr style={{ borderBottom: i < (users.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none' }}>
+                      <td colSpan={6} className="px-5 pb-3">
+                        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{toggleError[u.id]}</div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -313,7 +353,12 @@ export function SettingsClient() {
             style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
-                {modal === 'user' ? 'Nuevo Usuario' : modal === 'category' ? 'Nueva Categoría' : modal === 'warehouse' ? 'Nuevo Almacén' : modal === 'location' ? 'Agregar Ubicación' : 'Nuevo Proveedor'}
+                {modal === 'user' ? 'Nuevo Usuario'
+                  : modal === 'editUser' ? 'Editar Usuario'
+                  : modal === 'category' ? 'Nueva Categoría'
+                  : modal === 'warehouse' ? 'Nuevo Almacén'
+                  : modal === 'location' ? 'Agregar Ubicación'
+                  : 'Nuevo Proveedor'}
               </h2>
               <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
             </div>
@@ -334,6 +379,28 @@ export function SettingsClient() {
                   onConfirm={() => createUser.mutate({ name: uName, email: uEmail, password: uPass, role: uRole as 'ADMIN' | 'MANAGER' | 'VENDOR' | 'WAREHOUSE' | 'VIEWER' })}
                   loading={createUser.isPending}
                   label="Crear Usuario"
+                />
+              </div>
+            )}
+
+            {modal === 'editUser' && (
+              <div className="space-y-3">
+                <F label="Nombre *">
+                  <input value={editUserName} onChange={(e) => setEditUserName(e.target.value)} placeholder="Nombre completo" />
+                </F>
+                <F label="Rol">
+                  <select value={editUserRole} onChange={(e) => setEditUserRole(e.target.value)}>
+                    {Object.entries(ROLES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </F>
+                <Btns
+                  onCancel={closeModal}
+                  onConfirm={() => updateUser.mutate({
+                    id: editUserId,
+                    data: { name: editUserName, role: editUserRole as 'ADMIN' | 'MANAGER' | 'VENDOR' | 'WAREHOUSE' | 'VIEWER' },
+                  })}
+                  loading={updateUser.isPending}
+                  label="Guardar Cambios"
                 />
               </div>
             )}

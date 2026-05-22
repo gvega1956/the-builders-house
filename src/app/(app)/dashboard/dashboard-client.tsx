@@ -9,7 +9,6 @@ import {
   ArrowUpRight, ArrowDownRight, AlertTriangle, Camera,
   CheckCircle2, Shield, Boxes,
 } from 'lucide-react';
-import { useSession } from 'next-auth/react';
 import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 import { trpc } from '@/lib/trpc';
@@ -118,13 +117,12 @@ const MOVEMENT_TYPE_LABEL: Record<string, string> = {
   ADJUSTMENT: 'ajuste',
 };
 
-export function DashboardClient() {
-  const { data: session } = useSession();
+export function DashboardClient({ userName: fullName }: { userName: string }) {
   const { data: kpis } = trpc.dashboard.kpis.useQuery();
   const { data: salesByDay } = trpc.dashboard.salesByDay.useQuery({ days: 7 });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
 
-  const userName = session?.user?.name?.split(' ')[0] ?? 'equipo';
+  const userName = fullName.split(' ')[0] ?? 'equipo';
   const now = new Date();
   const hour = now.getHours();
   const greeting = hour < 12 ? 'Buenos días' : hour < 18 ? 'Buenas tardes' : 'Buenas noches';

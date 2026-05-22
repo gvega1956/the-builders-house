@@ -5,12 +5,13 @@ import { db } from '@/server/db';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { InvoicePdf } from './pdf-template';
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  const { id } = await params;
   const invoice = await db.invoice.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       customer: true,
       items: { include: { product: { select: { name: true, sku: true } } } },
@@ -29,4 +30,5 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       'Content-Disposition': `inline; filename="${invoice.invoiceNumber}.pdf"`,
     },
   });
+
 }
