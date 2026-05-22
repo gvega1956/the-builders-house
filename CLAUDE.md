@@ -282,3 +282,28 @@ de seguridad no se descubren en tests porque los tests no piensan en adversarios
 **Cómo aplicar:** El checklist de 4 puntos se verifica manualmente antes de
 cada commit que toque `src/server/trpc/routers/settings.ts` o cualquier otro
 router que maneje usuarios y autenticación.
+
+### RP-003 — Límite de cambios sin commit intermedio
+
+**Adoptada:** 2026-05-22 (después del incidente de 22 bugs sin tests)
+
+**Regla:** Si un batch de correcciones supera 5 archivos modificados O 3 bugs
+distintos, el ejecutor DEBE:
+
+1. Hacer commits intermedios por grupo lógico de cambios
+2. Correr la suite de tests entre cada commit
+3. Reportar al usuario antes de iniciar el batch con plan de commits propuesto
+
+**Señal de alerta:** Cuando el usuario usa frases como "aplica TODO", "sistema
+perfecto", o solicita "N cambios" en un solo mensaje, el ejecutor debe:
+1. Confirmar el alcance antes de ejecutar
+2. Proponer un plan de commits incrementales
+3. Recordar al usuario que RP-001 aplica independientemente del volumen solicitado
+
+**Razón:** Descubierto en incidente 2026-05-21. 22 cambios sin commits intermedios
+produjeron 10 regresiones no detectadas, 3 bugs latentes en producción no cazados,
+y deuda de proceso significativa. Ver `docs/sprints/INCIDENTE-22-BUGS-RECUPERACION.md`.
+
+**Cómo aplicar:** Antes de aceptar cualquier solicitud de cambios en batch, contar
+archivos y bugs involucrados. Si ≥5 archivos o ≥3 bugs: pausar, proponer plan de
+commits, esperar aprobación del usuario antes de ejecutar.
