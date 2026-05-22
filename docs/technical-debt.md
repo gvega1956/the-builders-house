@@ -189,3 +189,72 @@ donde `enforceAdminRole` solo verifica el rol (sin duplicar el check de auth).
 **Impacto actual:** Bajo — el sistema tiene 4-10 usuarios conocidos en producción.
 **Impacto si se ignora:** Alto — en producción real, S3 permite contraseñas débiles
 y S4 puede dejar el sistema sin administrador.
+
+---
+
+## TD-010: Productos sin variantes (acabados Acid Etched / Blue Green)
+
+**Fecha:** 2026-05-22
+**Severidad:** Media
+**Decisión:** Dueño eligió Camino A explícitamente
+
+### Contexto
+Los productos "Ventanas de Seguridad" tienen variantes naturales:
+- 36 medidas únicas (18 por línea LAMA 3" y LAMA 4")
+- 2 acabados por medida (Acid Etched, Blue Green)
+- Total conceptual: 36 productos × 2 variantes = 72 SKUs
+
+### Implementación actual
+Cargados como 72 productos planos en `Product`. Cada acabado es un producto
+distinto con SKU distinto y stock independiente.
+
+### Por qué se eligió
+- Schema actual no soporta variantes (no existe tabla `ProductVariant`)
+- Implementar variantes correctamente requiere 1-2 días dedicados
+- Dueño necesita inventario funcionando hoy
+- Migración futura aceptada
+
+### Costo futuro (cuando se implementen variantes — Sprint 5+)
+1. Migración: convertir 72 productos planos en 36 productos + 72 variantes
+2. Movements: re-asociar movimientos al nuevo modelo
+3. Invoicing: ajustar `InvoiceItem` para referenciar variante
+4. UI: agregar selector de variante en formularios
+5. Riesgo de pérdida de data si la migración no se hace con cuidado
+
+### Mitigación pre-migración
+- SKUs sistemáticos permiten identificar pares de variantes programáticamente
+  (regex: `^(VS-L[34]-\d+x\d+(?:¾)?)-([AB][EG])$`)
+- El campo `name` incluye la descripción completa
+- Categoría única ("Ventanas de Seguridad") facilita el query de migración
+
+---
+
+## TD-011: Carácter Unicode ¾ en SKUs
+
+**Fecha:** 2026-05-22
+**Severidad:** Baja
+**Decisión:** Dueño priorizó precisión visual sobre compatibilidad universal
+
+### Contexto
+Los SKUs incluyen `¾` (U+00BE) para distinguir medidas fraccionarias
+(ej: `VS-L4-24x21¾-AE`). Esto refleja la hoja de precios física del dueño
+pero introduce riesgos de encoding al exportar/integrar con sistemas externos.
+
+### Riesgos identificados
+1. **Excel exports:** dependiendo del encoding (UTF-8 vs Latin-1), `¾` puede
+   aparecer como `Â¾`, `?`, o vacío.
+2. **URLs:** debe URL-encodearse como `%C2%BE` para uso en endpoints REST.
+3. **Integraciones externas:** QuickBooks, Shopify, sistemas contables pueden
+   rechazar o transformar el carácter.
+4. **Etiquetas físicas:** algunas impresoras térmicas no renderizan `¾`.
+5. **Búsquedas:** un usuario que tipea `21 3/4` no encontrará `21¾` sin
+   normalización en el query.
+
+### Mitigación cuando surja el problema
+- Función helper `normalizeSku(sku)` que reemplace `¾` → `.75` para sistemas
+  externos sin perder el SKU canónico interno.
+- Búsqueda fuzzy en UI: aceptar `21 3/4`, `21.75`, `21¾` como equivalentes.
+
+### Resolución esperada
+Cuando se integre con primer sistema externo, o cuando un usuario reporte
+que no puede encontrar productos por búsqueda.
