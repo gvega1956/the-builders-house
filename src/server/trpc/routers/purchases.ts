@@ -1,9 +1,19 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
+import { createTRPCRouter, protectedProcedure, managerProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
 import { toDecimal } from '@/lib/money';
+
+// Máquina de estados para órdenes de compra.
+// Solo transiciones hacia adelante permitidas — previene reversiones accidentales.
+const VALID_PO_TRANSITIONS: Record<string, string[]> = {
+  DRAFT: ['SENT'],
+  SENT: ['IN_TRANSIT'],
+  IN_TRANSIT: ['RECEIVED'],
+  RECEIVED: ['CLOSED'],
+  CLOSED: [],
+};
 
 export const purchasesRouter = createTRPCRouter({
   list: protectedProcedure
@@ -67,7 +77,7 @@ export const purchasesRouter = createTRPCRouter({
               productId: z.string().cuid(),
               quantityOrdered: z.number().int().positive(),
               unitCostUsd: z.number().positive(),
-              unitCostDop: z.number().optional(),
+              unitCostDop: z.number().positive().optional(),
             })
           )
           .min(1),
@@ -85,28 +95,150 @@ export const purchasesRouter = createTRPCRouter({
         (sum, item) => sum.add(toDecimal(item.quantityOrdered).mul(toDecimal(item.unitCostUsd))),
         toDecimal(0)
       );
-      const totalLandedCost = subtotal.add(toDecimal(freightCost)).add(toDecimal(customsCost));
+      const totalLandedCost = subtotal
+        .add(toDecimal(freightCost))
+        .add(toDecimal(customsCost));
 
       const order = await ctx.db.$transaction(async (tx) => {
         const poNumber = await getNextSequenceValue(tx, 'PURCHASE_ORDER');
 
-        return tx.purchaseOrder.create({
+        const created = await tx.purchaseOrder.create({
           data: {
             ...rest,
             poNumber,
-            freightCost,
-            customsCost,
+            freightCost: toDecimal(freightCost),
+            customsCost: toDecimal(customsCost),
             totalLandedCost,
             items: { create: items },
           },
           include: { items: true, supplier: true },
         });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'CREATE',
+            entityType: 'PurchaseOrder',
+            entityId: created.id,
+            newValues: {
+              poNumber,
+              supplierId: input.supplierId,
+              itemCount: items.length,
+              totalLandedCost: totalLandedCost.toString(),
+            } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+          },
+        });
+
+        return created;
       });
 
       return order;
     }),
 
-  updateStatus: protectedProcedure
+  // Edición de órdenes en DRAFT: cambia items y/o datos de cabecera.
+  // Solo disponible cuando la PO no ha sido enviada al proveedor.
+  update: managerProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        supplierId: z.string().cuid().optional(),
+        expectedDate: z.date().optional(),
+        freightCost: z.number().min(0).optional(),
+        customsCost: z.number().min(0).optional(),
+        exchangeRate: z.number().positive().optional(),
+        notes: z.string().optional(),
+        // Si se proveen items, reemplaza todos los items existentes
+        items: z
+          .array(
+            z.object({
+              productId: z.string().cuid(),
+              quantityOrdered: z.number().int().positive(),
+              unitCostUsd: z.number().positive(),
+              unitCostDop: z.number().positive().optional(),
+            })
+          )
+          .min(1)
+          .optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, items, freightCost, customsCost, ...headerData } = input;
+
+      const order = await ctx.db.purchaseOrder.findUnique({
+        where: { id },
+        include: { items: true },
+      });
+      if (!order) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (order.status !== 'DRAFT') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Solo se pueden editar órdenes en estado DRAFT. Estado actual: ${order.status}`,
+        });
+      }
+
+      const updated = await ctx.db.$transaction(async (tx) => {
+        const resolvedFreight = freightCost !== undefined ? toDecimal(freightCost) : order.freightCost;
+        const resolvedCustoms = customsCost !== undefined ? toDecimal(customsCost) : order.customsCost;
+
+        let totalLandedCost = order.totalLandedCost;
+
+        if (items) {
+          await tx.purchaseOrderItem.deleteMany({ where: { purchaseOrderId: id } });
+
+          const subtotal = items.reduce(
+            (sum, item) => sum.add(toDecimal(item.quantityOrdered).mul(toDecimal(item.unitCostUsd))),
+            toDecimal(0)
+          );
+          totalLandedCost = subtotal.add(resolvedFreight).add(resolvedCustoms);
+
+          await tx.purchaseOrderItem.createMany({
+            data: items.map((item) => ({ ...item, purchaseOrderId: id })),
+          });
+        } else if (freightCost !== undefined || customsCost !== undefined) {
+          // Recalcular landed cost sin cambiar items
+          const existingSubtotal = order.items.reduce(
+            (sum, i) => sum.add(i.unitCostUsd.mul(i.quantityOrdered)),
+            toDecimal(0)
+          );
+          totalLandedCost = existingSubtotal.add(resolvedFreight).add(resolvedCustoms);
+        }
+
+        const result = await tx.purchaseOrder.update({
+          where: { id },
+          data: {
+            ...headerData,
+            ...(freightCost !== undefined && { freightCost: resolvedFreight }),
+            ...(customsCost !== undefined && { customsCost: resolvedCustoms }),
+            totalLandedCost,
+          },
+          include: { items: true, supplier: true },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'UPDATE',
+            entityType: 'PurchaseOrder',
+            entityId: id,
+            newValues: {
+              poNumber: order.poNumber,
+              changedFields: Object.keys(headerData),
+              itemsReplaced: !!items,
+            } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+          },
+        });
+
+        return result;
+      });
+
+      return updated;
+    }),
+
+  // Cambio de estado con máquina de estados estricta.
+  // Solo MANAGER o ADMIN pueden avanzar el estado de una PO.
+  updateStatus: managerProcedure
     .input(
       z.object({
         id: z.string().cuid(),
@@ -119,6 +251,14 @@ export const purchasesRouter = createTRPCRouter({
         select: { status: true, poNumber: true },
       });
       if (!order) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      const allowed = VALID_PO_TRANSITIONS[order.status] ?? [];
+      if (!allowed.includes(input.status)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Transición inválida: ${order.status} → ${input.status}. Transiciones permitidas desde ${order.status}: ${allowed.join(', ') || 'ninguna (estado terminal)'}`,
+        });
+      }
 
       const data: Prisma.PurchaseOrderUpdateInput = { status: input.status };
       if (input.status === 'RECEIVED') data.receivedDate = new Date();
@@ -143,7 +283,9 @@ export const purchasesRouter = createTRPCRouter({
       return updated;
     }),
 
-  receive: protectedProcedure
+  // Recepción de mercancía: solo cuando la PO está IN_TRANSIT.
+  // Solo MANAGER o ADMIN pueden registrar recepciones.
+  receive: managerProcedure
     .input(
       z.object({
         id: z.string().cuid(),
@@ -163,15 +305,19 @@ export const purchasesRouter = createTRPCRouter({
       });
       if (!order) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      if (order.status !== 'IN_TRANSIT' && order.status !== 'RECEIVED') {
+      if (order.status !== 'IN_TRANSIT') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: `No se puede recibir una orden en estado ${order.status}. La orden debe estar IN_TRANSIT.`,
+          message: `Solo se puede recibir mercancía de órdenes IN_TRANSIT. Estado actual: ${order.status}`,
         });
       }
 
       await ctx.db.$transaction(async (tx) => {
-        const receivedSummary: Array<{ itemId: string; productId: string; quantityReceived: number }> = [];
+        const receivedSummary: Array<{
+          itemId: string;
+          productId: string;
+          quantityReceived: number;
+        }> = [];
 
         for (const recv of input.items) {
           const item = order.items.find((i) => i.id === recv.itemId);
@@ -185,13 +331,15 @@ export const purchasesRouter = createTRPCRouter({
             });
           }
 
-          // Validate that the location belongs to the same product
           const location = await tx.productLocation.findUnique({
             where: { id: recv.locationId },
             select: { productId: true },
           });
           if (!location) {
-            throw new TRPCError({ code: 'NOT_FOUND', message: `Ubicación ${recv.locationId} no encontrada` });
+            throw new TRPCError({
+              code: 'NOT_FOUND',
+              message: `Ubicación ${recv.locationId} no encontrada`,
+            });
           }
           if (location.productId !== item.productId) {
             throw new TRPCError({
@@ -223,15 +371,20 @@ export const purchasesRouter = createTRPCRouter({
             data: { quantityOnHand: { increment: recv.quantityReceived } },
           });
 
-          receivedSummary.push({ itemId: recv.itemId, productId: item.productId, quantityReceived: recv.quantityReceived });
+          receivedSummary.push({
+            itemId: recv.itemId,
+            productId: item.productId,
+            quantityReceived: recv.quantityReceived,
+          });
         }
 
-        // Check if order is fully received after this batch
         const updatedItems = await tx.purchaseOrderItem.findMany({
           where: { purchaseOrderId: input.id },
           select: { quantityOrdered: true, quantityReceived: true },
         });
-        const fullyReceived = updatedItems.every((i) => i.quantityReceived >= i.quantityOrdered);
+        const fullyReceived = updatedItems.every(
+          (i) => i.quantityReceived >= i.quantityOrdered
+        );
 
         await tx.purchaseOrder.update({
           where: { id: input.id },

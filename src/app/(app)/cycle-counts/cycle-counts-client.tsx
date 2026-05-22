@@ -31,6 +31,7 @@ export function CycleCountsClient() {
 
   // Assign form
   const [aProductId, setAProductId] = useState('');
+  const [aLocationId, setALocationId] = useState('');
   const [aUserId, setAUserId] = useState('');
   const [aDate, setADate] = useState('');
   const [aNotes, setANotes] = useState('');
@@ -38,7 +39,6 @@ export function CycleCountsClient() {
   // Complete form
   const [selectedCount, setSelectedCount] = useState<{ id: string; systemQuantity: number; productSku: string } | null>(null);
   const [cQuantity, setCQuantity] = useState(0);
-  const [cLocationId, setCLocationId] = useState('');
   const [cNotes, setCNotes] = useState('');
 
   const { data: counts, refetch } = trpc.cycleCounts.list.useQuery({ completed: showCompleted ? undefined : false });
@@ -58,8 +58,8 @@ export function CycleCountsClient() {
 
   function closeModal() {
     setModal(''); setError('');
-    setAProductId(''); setAUserId(''); setADate(''); setANotes('');
-    setCQuantity(0); setCLocationId(''); setCNotes('');
+    setAProductId(''); setALocationId(''); setAUserId(''); setADate(''); setANotes('');
+    setCQuantity(0); setCNotes('');
     setSelectedCount(null);
   }
 
@@ -177,7 +177,7 @@ export function CycleCountsClient() {
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Producto *</label>
-                  <select value={aProductId} onChange={(e) => setAProductId(e.target.value)}
+                  <select value={aProductId} onChange={(e) => { setAProductId(e.target.value); setALocationId(''); }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none">
                     <option value="">Seleccionar...</option>
                     {products?.products.map((p) => (
@@ -185,6 +185,18 @@ export function CycleCountsClient() {
                     ))}
                   </select>
                 </div>
+                {aProductId && (
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Ubicación a Contar *</label>
+                    <select value={aLocationId} onChange={(e) => setALocationId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none">
+                      <option value="">Seleccionar ubicación...</option>
+                      {products?.products.find((p) => p.id === aProductId)?.locations.map((l) => (
+                        <option key={l.id} value={l.id}>{l.warehouse.name} — {l.locationCode} (stock: {l.quantityOnHand})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Asignar a *</label>
                   <select value={aUserId} onChange={(e) => setAUserId(e.target.value)}
@@ -208,8 +220,8 @@ export function CycleCountsClient() {
                 <div className="flex gap-3 pt-2">
                   <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
                   <button
-                    onClick={() => assignMutation.mutate({ productId: aProductId, assignedUserId: aUserId, scheduledDate: new Date(aDate), notes: aNotes || undefined })}
-                    disabled={assignMutation.isPending || !aProductId || !aUserId || !aDate}
+                    onClick={() => assignMutation.mutate({ productId: aProductId, locationId: aLocationId, assignedUserId: aUserId, scheduledDate: new Date(aDate), notes: aNotes || undefined })}
+                    disabled={assignMutation.isPending || !aProductId || !aLocationId || !aUserId || !aDate}
                     className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
                     style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
                     {assignMutation.isPending ? 'Asignando...' : 'Asignar'}
@@ -236,18 +248,6 @@ export function CycleCountsClient() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Ubicación para Ajuste</label>
-                  <select value={cLocationId} onChange={(e) => setCLocationId(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none">
-                    <option value="">Seleccionar ubicación...</option>
-                    {warehouses?.flatMap((w) =>
-                      w.locations.map((l) => (
-                        <option key={l.id} value={l.id}>{w.name} — {l.locationCode}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div>
                   <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Notas</label>
                   <textarea value={cNotes} onChange={(e) => setCNotes(e.target.value)} rows={2}
                     placeholder="Observaciones del conteo..."
@@ -256,8 +256,8 @@ export function CycleCountsClient() {
                 <div className="flex gap-3 pt-2">
                   <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
                   <button
-                    onClick={() => completeMutation.mutate({ id: selectedCount.id, countedQuantity: cQuantity, locationId: cLocationId, notes: cNotes || undefined })}
-                    disabled={completeMutation.isPending || !cLocationId}
+                    onClick={() => completeMutation.mutate({ id: selectedCount.id, countedQuantity: cQuantity, notes: cNotes || undefined })}
+                    disabled={completeMutation.isPending}
                     className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
                     style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
                     {completeMutation.isPending ? 'Guardando...' : 'Confirmar Conteo'}

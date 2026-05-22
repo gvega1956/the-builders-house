@@ -360,7 +360,9 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
   // ── C. create — type=CREDIT_NOTE ─────────────────────────────────────────
 
   describe('create — type=CREDIT_NOTE', () => {
-    it('C1: CREDIT_NOTE lanza METHOD_NOT_SUPPORTED con referencia a TD-005', async () => {
+    it('C1: CREDIT_NOTE sin sourceInvoiceId lanza error de validación Zod (B-3 fix)', async () => {
+      // CN now supported — but requires sourceInvoiceId referencing the original invoice.
+      // Without sourceInvoiceId, the Zod superRefine guard catches it before business logic.
       const vendor = makeCaller(vendorId, 'VENDOR');
       await expect(
         vendor.create({
@@ -368,8 +370,9 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
           type: 'CREDIT_NOTE',
           items: [{ productId, locationId, quantity: 1, unitPrice: 100 }],
           taxRate: 0.115,
+          // sourceInvoiceId deliberately omitted
         })
-      ).rejects.toThrow(/TD-005/);
+      ).rejects.toThrow(/sourceInvoiceId/i);
     });
   });
 
@@ -580,7 +583,9 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quoteBefore = await db.invoice.findUnique({ where: { id: quote.id } });
       expect(quoteBefore!.status).toBe('CONVERTED');
 
-      await vendor.void({ id: invoice.id, reason: 'Error en cantidad — debe reemitirse' });
+      // void requires MANAGER or ADMIN (B-2 fix) — vendor caller would throw FORBIDDEN
+      const manager = makeCaller(managerId, 'MANAGER');
+      await manager.void({ id: invoice.id, reason: 'Error en cantidad — debe reemitirse' });
 
       // Regla 3: QUOTE reverts to ISSUED — can be re-converted
       const quoteAfter = await db.invoice.findUnique({ where: { id: quote.id } });

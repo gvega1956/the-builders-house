@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
+import { createTRPCRouter, protectedProcedure, managerProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import type { Prisma } from '@prisma/client';
 
@@ -34,16 +34,18 @@ export const productsRouter = createTRPCRouter({
         search: z.string().optional(),
         categoryId: z.string().optional(),
         lowStock: z.boolean().optional(),
+        includeInactive: z.boolean().optional(),
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(1000).default(50),
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { search, categoryId, lowStock, page = 1, pageSize = 50 } = input ?? {};
+      const { search, categoryId, lowStock, includeInactive, page = 1, pageSize = 50 } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where = {
-        isActive: true,
+        // Only filter by isActive when not explicitly showing all
+        ...(includeInactive ? {} : { isActive: true }),
         ...(search && {
           OR: [
             { name: { contains: search, mode: 'insensitive' as const } },
@@ -161,7 +163,7 @@ export const productsRouter = createTRPCRouter({
       totalStock: number;
     }>>`
       SELECT p.id, p.sku, p.name, p."minStock",
-             COALESCE(SUM(pl."quantityOnHand"), 0)::int as "totalStock"
+             COALESCE(SUM(pl."quantityOnHand"), 0)::int AS "totalStock"
       FROM products p
       LEFT JOIN product_locations pl ON pl."productId" = p.id
       WHERE p."isActive" = true
@@ -198,6 +200,38 @@ export const productsRouter = createTRPCRouter({
           entityId: updated.id,
           oldValues: before as unknown as Prisma.InputJsonValue,
           newValues: updated as unknown as Prisma.InputJsonValue,
+          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+        },
+      });
+
+      return updated;
+    }),
+
+  // Soft-delete: marks product as inactive. Requires MANAGER or ADMIN.
+  deactivate: managerProcedure
+    .input(z.string().cuid())
+    .mutation(async ({ ctx, input }) => {
+      const product = await ctx.db.product.findUnique({
+        where: { id: input },
+        select: { sku: true, name: true, isActive: true },
+      });
+      if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (!product.isActive) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El producto ya está inactivo' });
+      }
+
+      const updated = await ctx.db.product.update({
+        where: { id: input },
+        data: { isActive: false },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'DEACTIVATE',
+          entityType: 'Product',
+          entityId: input,
+          newValues: { sku: product.sku, name: product.name, isActive: false } as Prisma.InputJsonValue,
           ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
         },
       });

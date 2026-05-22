@@ -152,7 +152,9 @@ describe('Bug 2.2 — Anulación revierte inventario', () => {
     const locAfterCreate = await db.productLocation.findUnique({ where: { id: locationId } });
     expect(locAfterCreate!.quantityOnHand).toBe(42); // 50 - 8
 
-    await vendor.void({ id: invoice.id, reason: 'Pedido cancelado por el cliente' });
+    // void requires MANAGER (B-2 fix)
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Pedido cancelado por el cliente' });
 
     // Stock must be fully restored
     const locAfterVoid = await db.productLocation.findUnique({ where: { id: locationId } });
@@ -191,7 +193,8 @@ describe('Bug 2.2 — Anulación revierte inventario', () => {
     const locAfterCreate = await db.productLocation.findUnique({ where: { id: locationId } });
     expect(locAfterCreate!.quantityOnHand).toBe(45); // 50 - 5
 
-    await vendor.void({ id: invoice.id, reason: 'Devolución total — pago parcial registrado externamente' });
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Devolución total — pago parcial registrado externamente' });
 
     // Full inventory restoration regardless of partial payment
     const locAfterVoid = await db.productLocation.findUnique({ where: { id: locationId } });
@@ -226,7 +229,8 @@ describe('Bug 2.2 — Anulación revierte inventario', () => {
     const locBefore = await db.productLocation.findUnique({ where: { id: locationId } });
     expect(locBefore!.quantityOnHand).toBe(2);
 
-    await vendor.void({ id: invoice.id, reason: 'Backorder rechazado — sin stock disponible' });
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Backorder rechazado — sin stock disponible' });
 
     // No RETURN movement — PENDING_AUTHORIZATION never created OUT movements
     const movements = await db.inventoryMovement.findMany({ where: { locationId } });
@@ -266,7 +270,8 @@ describe('Bug 2.2 — Anulación revierte inventario', () => {
     });
 
     // Void must succeed even with orphan items
-    await vendor.void({ id: invoice.id, reason: 'Anulación con ubicación eliminada' });
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Anulación con ubicación eliminada' });
 
     const voidedInvoice = await db.invoice.findUnique({ where: { id: invoice.id } });
     expect(voidedInvoice!.status).toBe('VOIDED');
@@ -311,8 +316,10 @@ describe('Bug 2.2 — Anulación revierte inventario', () => {
     const paidInvoice = await db.invoice.findUnique({ where: { id: invoice.id } });
     expect(paidInvoice!.status).toBe('PAID');
 
+    // Even MANAGER cannot void a PAID invoice — business rule is independent of role
+    const manager = makeCaller(managerId, 'MANAGER');
     await expect(
-      vendor.void({ id: invoice.id, reason: 'intento de anulación' })
+      manager.void({ id: invoice.id, reason: 'intento de anulación' })
     ).rejects.toThrow(/pagada/);
   });
 });

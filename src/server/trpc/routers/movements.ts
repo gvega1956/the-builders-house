@@ -2,6 +2,16 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 
+// C-2: valid referenceType values per movementType
+const VALID_REFERENCE_TYPES: Record<string, string[]> = {
+  IN:         ['PURCHASE_ORDER', 'ADJUSTMENT'],
+  OUT:        ['INVOICE'],
+  RETURN:     ['INVOICE'],
+  DAMAGE:     ['DAMAGE_REPORT'],
+  TRANSFER:   ['TRANSFER'],
+  ADJUSTMENT: ['ADJUSTMENT', 'CYCLE_COUNT'],
+};
+
 const movementCreateSchema = z
   .object({
     productId: z.string().cuid(),
@@ -16,7 +26,7 @@ const movementCreateSchema = z
     gpsLat: z.number().optional(),
     gpsLng: z.number().optional(),
   })
-  .superRefine(({ movementType, quantity, destinationLocationId, locationId }, ctx) => {
+  .superRefine(({ movementType, quantity, referenceType, destinationLocationId, locationId }, ctx) => {
     const mustBePositive = ['IN', 'RETURN'];
     const mustBeNegative = ['OUT', 'DAMAGE'];
 
@@ -51,9 +61,20 @@ const movementCreateSchema = z
         message: 'La ubicación destino debe ser diferente a la ubicación origen',
       });
     }
+
+    // C-2: cross-validate movementType / referenceType
+    const allowed = VALID_REFERENCE_TYPES[movementType];
+    if (allowed && !allowed.includes(referenceType)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['referenceType'],
+        message: `Movimiento ${movementType} solo acepta referenceType: ${allowed.join(', ')}. Recibido: ${referenceType}`,
+      });
+    }
   });
 
-type LocationRow = { id: string; productId: string; quantityOnHand: number };
+// C-1: include reservedQuantity so available stock = quantityOnHand - reservedQuantity
+type LocationRow = { id: string; productId: string; quantityOnHand: number; reservedQuantity: number };
 
 export const movementsRouter = createTRPCRouter({
   list: protectedProcedure
@@ -121,10 +142,11 @@ export const movementsRouter = createTRPCRouter({
       // TRANSFER: dos movimientos atómicos (OUT en origen, IN en destino) con el mismo referenceId
       if (movementType === 'TRANSFER') {
         const { id: createdId } = await ctx.db.$transaction(async (tx) => {
-          // Lock ambas ubicaciones en orden ascendente para prevenir deadlocks.
+          // Lock ambas ubicaciones en orden ascendente para prevenir deadlocks
           const [first, second] = [input.locationId, destinationLocationId!].sort();
+          // C-1: fetch reservedQuantity alongside quantityOnHand
           const locRows = await tx.$queryRaw<LocationRow[]>`
-            SELECT id, "productId", "quantityOnHand"
+            SELECT id, "productId", "quantityOnHand", "reservedQuantity"
             FROM product_locations
             WHERE id IN (${first}, ${second})
             ORDER BY id ASC
@@ -145,8 +167,13 @@ export const movementsRouter = createTRPCRouter({
           }
 
           const qty = Math.abs(input.quantity);
-          if (originRow.quantityOnHand < qty) {
-            throw new TRPCError({ code: 'BAD_REQUEST', message: `Stock insuficiente en origen. Disponible: ${originRow.quantityOnHand}` });
+          // C-1: use available stock (quantityOnHand - reservedQuantity) for the check
+          const availableOrigin = originRow.quantityOnHand - originRow.reservedQuantity;
+          if (availableOrigin < qty) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Stock disponible insuficiente en origen. Disponible: ${availableOrigin} (en mano: ${originRow.quantityOnHand}, reservado: ${originRow.reservedQuantity})`,
+            });
           }
 
           const transferRef = input.referenceId ?? `TRF-${Date.now()}`;
@@ -190,9 +217,10 @@ export const movementsRouter = createTRPCRouter({
       }
 
       const movement = await ctx.db.$transaction(async (tx) => {
-        // Pessimistic lock — adquiere lock exclusivo ANTES de leer el stock.
+        // Pessimistic lock — adquiere lock exclusivo ANTES de leer el stock
+        // C-1: fetch reservedQuantity for accurate available-stock check
         const rows = await tx.$queryRaw<LocationRow[]>`
-          SELECT id, "productId", "quantityOnHand"
+          SELECT id, "productId", "quantityOnHand", "reservedQuantity"
           FROM product_locations
           WHERE id = ${input.locationId}
           FOR UPDATE
@@ -211,11 +239,13 @@ export const movementsRouter = createTRPCRouter({
           });
         }
 
+        // C-1: available = quantityOnHand - reservedQuantity (stock not already committed)
         const isSalida = ['OUT', 'DAMAGE'].includes(movementType);
-        if (isSalida && location.quantityOnHand < Math.abs(input.quantity)) {
+        const available = location.quantityOnHand - location.reservedQuantity;
+        if (isSalida && available < Math.abs(input.quantity)) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
-            message: `Stock insuficiente. Disponible: ${location.quantityOnHand}`,
+            message: `Stock disponible insuficiente. Disponible: ${available} (en mano: ${location.quantityOnHand}, reservado: ${location.reservedQuantity})`,
           });
         }
 

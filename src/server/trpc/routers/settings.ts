@@ -6,6 +6,7 @@ import bcryptjs from 'bcryptjs';
 
 export const settingsRouter = createTRPCRouter({
   // ── Users ───────────────────────────────────────────────────────────────
+
   users: managerProcedure.query(async ({ ctx }) => {
     return ctx.db.user.findMany({
       select: {
@@ -24,9 +25,9 @@ export const settingsRouter = createTRPCRouter({
   createUser: adminProcedure
     .input(
       z.object({
-        name: z.string().min(1),
-        email: z.string().email(),
-        password: z.string().min(8),
+        name: z.string().min(1).max(100),
+        email: z.string().email().max(254),
+        password: z.string().min(8).max(128),
         role: z.enum(['ADMIN', 'MANAGER', 'VENDOR', 'WAREHOUSE', 'VIEWER']),
       })
     )
@@ -40,7 +41,6 @@ export const settingsRouter = createTRPCRouter({
         select: { id: true, name: true, email: true, role: true, isActive: true, createdAt: true },
       });
 
-      // P1 — immutable audit: user creation is a security-critical event.
       await ctx.db.auditLog.create({
         data: {
           userId: ctx.session!.user!.id!,
@@ -64,18 +64,35 @@ export const settingsRouter = createTRPCRouter({
       z.object({
         id: z.string().cuid(),
         data: z.object({
-          name: z.string().min(1).optional(),
+          name: z.string().min(1).max(100).optional(),
           role: z.enum(['ADMIN', 'MANAGER', 'VENDOR', 'WAREHOUSE', 'VIEWER']).optional(),
           isActive: z.boolean().optional(),
         }),
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Read previous values before update for audit log (role changes are security-critical).
       const previous = await ctx.db.user.findUnique({
         where: { id: input.id },
         select: { role: true, isActive: true, name: true },
       });
+      if (!previous) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+
+      // Proteger el último ADMIN activo del sistema
+      const isDegradingRole = input.data.role && input.data.role !== 'ADMIN' && previous.role === 'ADMIN';
+      const isDeactivating = input.data.isActive === false && previous.isActive;
+
+      if (isDegradingRole || isDeactivating) {
+        const activeAdminCount = await ctx.db.user.count({
+          where: { role: 'ADMIN', isActive: true, id: { not: input.id } },
+        });
+        if (activeAdminCount === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'No puedes degradar o desactivar al único administrador activo del sistema. Asigna otro ADMIN primero.',
+          });
+        }
+      }
 
       const updated = await ctx.db.user.update({
         where: { id: input.id },
@@ -83,7 +100,6 @@ export const settingsRouter = createTRPCRouter({
         select: { id: true, name: true, email: true, role: true, isActive: true },
       });
 
-      // P1 — immutable audit: role and activation changes are security-critical events.
       await ctx.db.auditLog.create({
         data: {
           userId: ctx.session!.user!.id!,
@@ -102,6 +118,7 @@ export const settingsRouter = createTRPCRouter({
     }),
 
   // ── Categories ──────────────────────────────────────────────────────────
+
   categories: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.category.findMany({
       include: { _count: { select: { products: true } } },
@@ -109,8 +126,8 @@ export const settingsRouter = createTRPCRouter({
     });
   }),
 
-  createCategory: protectedProcedure
-    .input(z.object({ name: z.string().min(1), slug: z.string().min(1) }))
+  createCategory: managerProcedure
+    .input(z.object({ name: z.string().min(1).max(100), slug: z.string().min(1).max(100) }))
     .mutation(async ({ ctx, input }) => {
       const existing = await ctx.db.category.findFirst({
         where: { OR: [{ name: input.name }, { slug: input.slug }] },
@@ -129,7 +146,49 @@ export const settingsRouter = createTRPCRouter({
       return category;
     }),
 
+  updateCategory: managerProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        data: z.object({
+          name: z.string().min(1).max(100).optional(),
+          slug: z.string().min(1).max(100).optional(),
+          isActive: z.boolean().optional(),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const previous = await ctx.db.category.findUnique({ where: { id: input.id } });
+      if (!previous) throw new TRPCError({ code: 'NOT_FOUND', message: 'Categoría no encontrada' });
+
+      if (input.data.name && input.data.name !== previous.name) {
+        const nameConflict = await ctx.db.category.findFirst({
+          where: { name: input.data.name, id: { not: input.id } },
+        });
+        if (nameConflict) throw new TRPCError({ code: 'CONFLICT', message: 'Nombre de categoría ya existe' });
+      }
+
+      const updated = await ctx.db.category.update({
+        where: { id: input.id },
+        data: input.data,
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE_CATEGORY',
+          entityType: 'Category',
+          entityId: input.id,
+          oldValues: { name: previous.name, slug: previous.slug, isActive: previous.isActive } as Prisma.InputJsonValue,
+          newValues: input.data as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    }),
+
   // ── Warehouses ──────────────────────────────────────────────────────────
+
   warehouses: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.warehouse.findMany({
       include: {
@@ -143,9 +202,12 @@ export const settingsRouter = createTRPCRouter({
     });
   }),
 
-  createWarehouse: protectedProcedure
-    .input(z.object({ name: z.string().min(1), address: z.string().optional() }))
+  createWarehouse: managerProcedure
+    .input(z.object({ name: z.string().min(1).max(200), address: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
+      const existing = await ctx.db.warehouse.findFirst({ where: { name: input.name } });
+      if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Ya existe un almacén con ese nombre' });
+
       const warehouse = await ctx.db.warehouse.create({ data: input });
       await ctx.db.auditLog.create({
         data: {
@@ -159,7 +221,42 @@ export const settingsRouter = createTRPCRouter({
       return warehouse;
     }),
 
+  updateWarehouse: managerProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        data: z.object({
+          name: z.string().min(1).max(200).optional(),
+          address: z.string().optional(),
+          isActive: z.boolean().optional(),
+        }),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const previous = await ctx.db.warehouse.findUnique({ where: { id: input.id } });
+      if (!previous) throw new TRPCError({ code: 'NOT_FOUND', message: 'Almacén no encontrado' });
+
+      const updated = await ctx.db.warehouse.update({
+        where: { id: input.id },
+        data: input.data,
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE_WAREHOUSE',
+          entityType: 'Warehouse',
+          entityId: input.id,
+          oldValues: { name: previous.name, address: previous.address, isActive: previous.isActive } as Prisma.InputJsonValue,
+          newValues: input.data as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    }),
+
   // ── Suppliers ────────────────────────────────────────────────────────────
+
   suppliers: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.supplier.findMany({
       include: {
@@ -169,10 +266,10 @@ export const settingsRouter = createTRPCRouter({
     });
   }),
 
-  createSupplier: protectedProcedure
+  createSupplier: managerProcedure
     .input(
       z.object({
-        name: z.string().min(1),
+        name: z.string().min(1).max(200),
         country: z.enum(['DO', 'PR', 'US']).default('DO'),
         contactName: z.string().optional(),
         contactEmail: z.string().email().optional().or(z.literal('')),
@@ -197,12 +294,12 @@ export const settingsRouter = createTRPCRouter({
       return supplier;
     }),
 
-  updateSupplier: protectedProcedure
+  updateSupplier: managerProcedure
     .input(
       z.object({
         id: z.string().cuid(),
         data: z.object({
-          name: z.string().optional(),
+          name: z.string().min(1).max(200).optional(),
           contactName: z.string().optional(),
           contactEmail: z.string().email().optional().or(z.literal('')),
           contactPhone: z.string().optional(),
@@ -214,6 +311,8 @@ export const settingsRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const previous = await ctx.db.supplier.findUnique({ where: { id: input.id } });
+      if (!previous) throw new TRPCError({ code: 'NOT_FOUND', message: 'Proveedor no encontrado' });
+
       const updated = await ctx.db.supplier.update({
         where: { id: input.id },
         data: { ...input.data, contactEmail: input.data.contactEmail || undefined },
@@ -231,12 +330,14 @@ export const settingsRouter = createTRPCRouter({
       return updated;
     }),
 
-  createProductLocation: protectedProcedure
+  // ── Product Locations ────────────────────────────────────────────────────
+
+  createProductLocation: managerProcedure
     .input(
       z.object({
         warehouseId: z.string().cuid(),
         productId: z.string().cuid(),
-        locationCode: z.string().min(1),
+        locationCode: z.string().min(1).max(50),
         quantityOnHand: z.number().int().min(0).default(0),
       })
     )
@@ -245,7 +346,10 @@ export const settingsRouter = createTRPCRouter({
         where: { warehouseId: input.warehouseId, productId: input.productId },
       });
       if (existing) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Ya existe una ubicación para este producto en este almacén' });
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Ya existe una ubicación para este producto en este almacén',
+        });
       }
 
       const location = await ctx.db.$transaction(async (tx) => {
@@ -291,5 +395,35 @@ export const settingsRouter = createTRPCRouter({
       });
 
       return location;
+    }),
+
+  updateProductLocation: managerProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        locationCode: z.string().min(1).max(50),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const previous = await ctx.db.productLocation.findUnique({ where: { id: input.id } });
+      if (!previous) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ubicación no encontrada' });
+
+      const updated = await ctx.db.productLocation.update({
+        where: { id: input.id },
+        data: { locationCode: input.locationCode },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE_PRODUCT_LOCATION',
+          entityType: 'ProductLocation',
+          entityId: input.id,
+          oldValues: { locationCode: previous.locationCode } as Prisma.InputJsonValue,
+          newValues: { locationCode: input.locationCode } as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
     }),
 });

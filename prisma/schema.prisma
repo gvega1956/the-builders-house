@@ -157,6 +157,22 @@ model VerificationToken {
 }
 
 // ─────────────────────────────────────────────────────────────
+// INTENTOS DE LOGIN — rate limiting persistente
+// ─────────────────────────────────────────────────────────────
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  success   Boolean  @default(false)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@map("login_attempts")
+}
+
+// ─────────────────────────────────────────────────────────────
 // INVENTARIO
 // ─────────────────────────────────────────────────────────────
 
@@ -164,7 +180,9 @@ model Category {
   id        String    @id @default(cuid())
   name      String    @unique
   slug      String    @unique
+  isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   products  Product[]
 
@@ -196,6 +214,7 @@ model Warehouse {
   address   String?
   isActive  Boolean   @default(true)
   createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
 
   locations ProductLocation[]
 
@@ -251,6 +270,7 @@ model ProductLocation {
   warehouse          Warehouse     @relation(fields: [warehouseId], references: [id])
   movements          InventoryMovement[]
   invoiceItems       InvoiceItem[]
+  cycleCounts        CycleCount[]
 
   @@unique([productId, warehouseId])
   @@map("product_locations")
@@ -286,6 +306,7 @@ model InventoryMovement {
   @@index([createdAt(sort: Desc)])
   @@index([movementType])
   @@index([productId, createdAt(sort: Desc)])
+  @@index([referenceType, referenceId])
   @@map("inventory_movements")
 }
 
@@ -348,6 +369,9 @@ model Invoice {
   @@index([status])
   @@index([createdAt(sort: Desc)])
   @@index([customerId, status])
+  @@index([type])
+  @@index([sourceQuoteId])
+  @@index([sourceInvoiceId])
   @@map("invoices")
 }
 
@@ -365,6 +389,7 @@ model InvoiceItem {
   product         Product          @relation(fields: [productId], references: [id])
   location        ProductLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
 
+  @@index([productId])
   @@map("invoice_items")
 }
 
@@ -431,18 +456,20 @@ model PurchaseOrderItem {
 model CycleCount {
   id              String    @id @default(cuid())
   productId       String
+  locationId      String?   // ubicación específica a contar (NULL = conteo de todas las ubicaciones)
   assignedUserId  String
   scheduledDate   DateTime
   completedAt     DateTime?
-  systemQuantity  Int       // Lo que el sistema dice
+  systemQuantity  Int       // Lo que el sistema dice (por ubicación si locationId != null, total si null)
   countedQuantity Int?      // Lo que el empleado contó
   variance        Int?      // countedQuantity - systemQuantity
   notes           String?
   photoUrl        String?
   createdAt       DateTime  @default(now())
 
-  product         Product   @relation(fields: [productId], references: [id])
-  assignedUser    User      @relation(fields: [assignedUserId], references: [id])
+  product         Product          @relation(fields: [productId], references: [id])
+  location        ProductLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  assignedUser    User             @relation(fields: [assignedUserId], references: [id])
 
   @@map("cycle_counts")
 }

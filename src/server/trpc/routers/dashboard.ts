@@ -2,11 +2,11 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import type { Prisma } from '@prisma/client';
 
-type LocationWithProduct = Prisma.ProductLocationGetPayload<{
-  include: { product: { select: { unitCost: true } } };
-}>;
-
-type InvoiceForReduce = { total: Prisma.Decimal; createdAt: Date };
+// G-3: safe Decimal-to-display conversion — avoids float precision loss on large values
+function toNum(d: Prisma.Decimal | null | undefined): number {
+  if (!d) return 0;
+  return parseFloat(d.toFixed(2));
+}
 
 export const dashboardRouter = createTRPCRouter({
   kpis: protectedProcedure
@@ -24,12 +24,15 @@ export const dashboardRouter = createTRPCRouter({
       const from = input?.from ?? todayStart;
       const to = input?.to ?? now;
 
-      const [invoicesToday, unitsSold, locations, itemCosts, recentMovements, adjustmentsWithoutPhoto] =
+      // G-1: SQL aggregation for inventoryValue and totalUnits — no full table scan in JS
+      // G-2: SQL aggregation for costToday — no full itemCosts fetch in JS
+      const [invoicesToday, unitsSold, inventoryAgg, costAgg, recentMovements, adjustmentsWithoutPhoto] =
         await Promise.all([
           ctx.db.invoice.aggregate({
             _sum: { total: true },
             _count: { id: true },
             where: {
+              type: 'INVOICE',
               status: { in: ['PAID', 'PARTIAL', 'ISSUED'] },
               createdAt: { gte: from, lte: to },
             },
@@ -38,26 +41,31 @@ export const dashboardRouter = createTRPCRouter({
             _sum: { quantity: true },
             where: {
               invoice: {
+                type: 'INVOICE',
                 status: { in: ['PAID', 'PARTIAL', 'ISSUED'] },
                 createdAt: { gte: from, lte: to },
               },
             },
           }),
-          ctx.db.productLocation.findMany({
-            include: { product: { select: { unitCost: true } } },
-          }) as Promise<LocationWithProduct[]>,
-          ctx.db.invoiceItem.findMany({
-            where: {
-              invoice: {
-                status: { in: ['PAID', 'PARTIAL', 'ISSUED'] },
-                createdAt: { gte: from, lte: to },
-              },
-            },
-            select: {
-              quantity: true,
-              product: { select: { unitCost: true } },
-            },
-          }),
+          // G-1: aggregate inventoryValue and totalUnits directly in SQL
+          ctx.db.$queryRaw<[{ inventoryValue: number; totalUnits: number }]>`
+            SELECT
+              COALESCE(SUM(pl."quantityOnHand"::numeric * p."unitCost"), 0)::float8 AS "inventoryValue",
+              COALESCE(SUM(pl."quantityOnHand"), 0)::int                            AS "totalUnits"
+            FROM product_locations pl
+            JOIN products p ON p.id = pl."productId" AND p."isActive" = true
+          `,
+          // G-1/G-2: cost of goods sold aggregated in SQL — no itemCosts findMany
+          ctx.db.$queryRaw<[{ costToday: number }]>`
+            SELECT COALESCE(SUM(ii.quantity::numeric * p."unitCost"), 0)::float8 AS "costToday"
+            FROM invoice_items ii
+            JOIN invoices inv ON inv.id = ii."invoiceId"
+            JOIN products p ON p.id = ii."productId"
+            WHERE inv.type = 'INVOICE'
+              AND inv.status IN ('PAID', 'PARTIAL', 'ISSUED')
+              AND inv.created_at >= ${from}
+              AND inv.created_at <= ${to}
+          `,
           ctx.db.inventoryMovement.findMany({
             orderBy: { createdAt: 'desc' },
             take: 10,
@@ -76,23 +84,11 @@ export const dashboardRouter = createTRPCRouter({
           }),
         ]);
 
-      const inventoryValue = locations.reduce(
-        (sum: number, loc: LocationWithProduct) =>
-          sum + loc.quantityOnHand * Number(loc.product.unitCost),
-        0
-      );
+      const { inventoryValue, totalUnits } = inventoryAgg[0]!;
+      const costToday = costAgg[0]!.costToday;
 
-      const totalUnits = locations.reduce(
-        (sum: number, loc: LocationWithProduct) => sum + loc.quantityOnHand,
-        0
-      );
-
-      const costToday = itemCosts.reduce(
-        (sum, item) => sum + item.quantity * Number(item.product.unitCost),
-        0
-      );
-
-      const salesToday = Number(invoicesToday._sum.total ?? 0);
+      // G-3: use toNum() for monetary values to avoid float precision loss
+      const salesToday = toNum(invoicesToday._sum.total);
 
       return {
         salesToday,
@@ -106,6 +102,7 @@ export const dashboardRouter = createTRPCRouter({
       };
     }),
 
+  // G-2: SQL GROUP BY DATE — no JS grouping over a full invoice fetch
   salesByDay: protectedProcedure
     .input(
       z
@@ -116,25 +113,22 @@ export const dashboardRouter = createTRPCRouter({
       const days = input?.days ?? 7;
       const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-      const invoices = await ctx.db.invoice.findMany({
-        where: {
-          status: { in: ['PAID', 'PARTIAL', 'ISSUED'] },
-          createdAt: { gte: from },
-        },
-        select: { total: true, createdAt: true },
-        orderBy: { createdAt: 'asc' },
-      });
+      const rows = await ctx.db.$queryRaw<Array<{ day: Date; total: number }>>`
+        SELECT
+          DATE(created_at) AS day,
+          SUM(total)::float8 AS total
+        FROM invoices
+        WHERE type = 'INVOICE'
+          AND status IN ('PAID', 'PARTIAL', 'ISSUED')
+          AND created_at >= ${from}
+        GROUP BY DATE(created_at)
+        ORDER BY day ASC
+      `;
 
-      const byDay = (invoices as InvoiceForReduce[]).reduce(
-        (acc: Record<string, number>, inv: InvoiceForReduce) => {
-          const day = inv.createdAt.toISOString().split('T')[0]!;
-          acc[day] = (acc[day] ?? 0) + Number(inv.total);
-          return acc;
-        },
-        {}
-      );
-
-      return Object.entries(byDay).map(([day, total]) => ({ day, total }));
+      return rows.map((r) => ({
+        day: r.day.toISOString().split('T')[0]!,
+        total: r.total,
+      }));
     }),
 
   reportSummary: protectedProcedure.query(async ({ ctx }) => {
@@ -155,7 +149,7 @@ export const dashboardRouter = createTRPCRouter({
       }),
       ctx.db.$queryRaw<Array<{ id: string; name: string; code: string; totalSales: number }>>`
         SELECT c.id, c.name, c.code,
-               COALESCE(SUM(i.total), 0)::float as "totalSales"
+               COALESCE(SUM(i.total), 0)::float8 AS "totalSales"
         FROM customers c
         LEFT JOIN invoices i ON i."customerId" = c.id
           AND i.status != 'VOIDED' AND i.type = 'INVOICE'
@@ -167,18 +161,18 @@ export const dashboardRouter = createTRPCRouter({
     ]);
 
     const pendingBalance = openInvoices.reduce(
-      (sum, inv) => sum + Number(inv.total) - Number(inv.paidAmount),
+      (sum, inv) => sum + toNum(inv.total) - toNum(inv.paidAmount),
       0,
     );
 
     return {
-      totalRevenue: Number(revenueAgg._sum.total ?? 0),
-      totalPaid: Number(revenueAgg._sum.paidAmount ?? 0),
+      totalRevenue: toNum(revenueAgg._sum.total),
+      totalPaid: toNum(revenueAgg._sum.paidAmount),
       pendingBalance,
       invoicesByStatus: byStatus.map((g) => ({
         status: g.status,
         count: g._count.id,
-        total: Number(g._sum.total ?? 0),
+        total: toNum(g._sum.total),
       })),
       topCustomers,
     };
@@ -186,7 +180,7 @@ export const dashboardRouter = createTRPCRouter({
 
   inventoryByCategory: protectedProcedure.query(async ({ ctx }) => {
     const result = await ctx.db.$queryRaw<Array<{ name: string; units: number }>>`
-      SELECT c.name, COALESCE(SUM(pl."quantityOnHand"), 0)::int as units
+      SELECT c.name, COALESCE(SUM(pl."quantityOnHand"), 0)::int AS units
       FROM categories c
       LEFT JOIN products p ON p."categoryId" = c.id AND p."isActive" = true
       LEFT JOIN product_locations pl ON pl."productId" = p.id

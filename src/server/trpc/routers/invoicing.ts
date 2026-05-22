@@ -1,13 +1,13 @@
 import { z } from 'zod';
-import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
+import { createTRPCRouter, protectedProcedure, managerProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
 import { toDecimal } from '@/lib/money';
 import { calculateAvailableStock } from '@/lib/inventory';
 
-// locationId is optional at the schema level; superRefine on the parent
-// object makes it required when type === 'INVOICE'.
+// locationId es opcional a nivel de schema; superRefine en el objeto padre
+// lo hace requerido cuando type === 'INVOICE' o 'CREDIT_NOTE'.
 const invoiceItemSchema = z.object({
   productId: z.string().cuid(),
   locationId: z.string().cuid().optional(),
@@ -24,18 +24,9 @@ type LocationRow = {
   reservedQuantity: number;
 };
 
-// Extracted to avoid repeating Decimal arithmetic between QUOTE and INVOICE paths.
-// Returns itemsData WITHOUT locationId — this is the explicit strip for QUOTE items,
-// which must always have locationId=NULL in the DB.
-// The INVOICE path maps itemsData → invoiceItemsData adding locationId back (see below).
-//
-// Bug 2.6 — lineTotal invariant:
-//   invoiceItemSchema has no lineTotal field: Zod strips any lineTotal the frontend sends.
-//   Every lineTotal is computed here from unitPrice × quantity × discountFactor.
-//   subtotal is the exact Decimal sum of all lineTotals — never independently recomputed.
-//   The assertion below guards against future refactors that compute subtotal via a
-//   different code path (e.g., order-level discounts), which would silently break the
-//   per-item lineTotal ↔ subtotal invariant.
+// Calcula totales de factura con aritmética Decimal exacta.
+// itemsData NO incluye locationId — se agrega en cada path según el tipo.
+// subtotal = suma exacta de lineTotals (nunca recomputado independientemente).
 function calcInvoiceTotals(items: z.infer<typeof invoiceItemSchema>[], taxRate: number) {
   const itemsData = items.map((item) => {
     const discountFactor = toDecimal(1).sub(toDecimal(item.discountPercent).div(100));
@@ -45,22 +36,10 @@ function calcInvoiceTotals(items: z.infer<typeof invoiceItemSchema>[], taxRate: 
       unitPrice: toDecimal(item.unitPrice),
       discountPercent: toDecimal(item.discountPercent),
       lineTotal: toDecimal(item.unitPrice).mul(item.quantity).mul(discountFactor),
-      // locationId explicitly excluded: guarantees QUOTE items get locationId=NULL.
     };
   });
 
   const subtotal = itemsData.reduce((sum, i) => sum.add(i.lineTotal), toDecimal(0));
-
-  // Bug 2.6: sanity — subtotal must equal sum(lineTotal).
-  // Currently tautological (subtotal IS that sum); fires only if this function is
-  // refactored to compute subtotal via a separate path while lineTotals stay unchanged.
-  const lineTotalSum = itemsData.reduce((s, i) => s.add(i.lineTotal), toDecimal(0));
-  if (!lineTotalSum.eq(subtotal)) {
-    console.error(
-      `[BUG-2.6] lineTotal sum (${lineTotalSum.toString()}) ≠ subtotal (${subtotal.toString()}) — calculation inconsistency detected`,
-    );
-  }
-
   const taxRateDecimal = toDecimal(taxRate);
   const taxAmount = subtotal.mul(taxRateDecimal);
   const total = subtotal.add(taxAmount);
@@ -68,10 +47,10 @@ function calcInvoiceTotals(items: z.infer<typeof invoiceItemSchema>[], taxRate: 
   return { itemsData, subtotal, taxRateDecimal, taxAmount, total };
 }
 
-// Bug 2.7: minimum-price validation helper.
-// VENDOR cannot create below-cost invoices or quotes.
-// MANAGER/ADMIN can, but must supply discountReason per item.
-// Returns the list of below-cost items for audit-log inclusion (empty = all at or above cost).
+// Valida precios mínimos por item.
+// VENDOR: no puede vender bajo costo (lanza FORBIDDEN).
+// MANAGER/ADMIN: puede, pero debe incluir discountReason por item.
+// Retorna los items bajo costo para el audit log.
 type BelowCostItem = {
   productId: string;
   productName: string;
@@ -119,6 +98,7 @@ export const invoicingRouter = createTRPCRouter({
     .input(
       z.object({
         search: z.string().optional(),
+        type: z.enum(['INVOICE', 'QUOTE', 'CREDIT_NOTE']).optional(),
         status: z
           .enum(['DRAFT', 'ISSUED', 'PAID', 'PARTIAL', 'VOIDED', 'PENDING_AUTHORIZATION', 'CONVERTED'])
           .optional(),
@@ -130,10 +110,11 @@ export const invoicingRouter = createTRPCRouter({
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { search, status, customerId, from, to, page = 1, pageSize = 50 } = input ?? {};
+      const { search, type, status, customerId, from, to, page = 1, pageSize = 50 } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.InvoiceWhereInput = {
+        ...(type && { type }),
         ...(status && { status }),
         ...(customerId && { customerId }),
         ...(from || to
@@ -180,6 +161,7 @@ export const invoicingRouter = createTRPCRouter({
             include: { receivedBy: { select: { name: true } } },
             orderBy: { paidAt: 'desc' },
           },
+          sourceInvoice: { select: { invoiceNumber: true } },
         },
       });
       if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -195,7 +177,9 @@ export const invoicingRouter = createTRPCRouter({
         taxRate: z.number().min(0).max(1).default(0.115),
         dueDate: z.date().optional(),
         notes: z.string().optional(),
-      }).superRefine(({ type, items }, ctx) => {
+        sourceInvoiceId: z.string().cuid().optional(),
+      }).superRefine(({ type, items, sourceInvoiceId }, ctx) => {
+        // locationId requerido para INVOICE y CREDIT_NOTE
         if (type === 'INVOICE' || type === 'CREDIT_NOTE') {
           items.forEach((item, i) => {
             if (!item.locationId) {
@@ -207,6 +191,14 @@ export const invoicingRouter = createTRPCRouter({
             }
           });
         }
+        // sourceInvoiceId requerido para CREDIT_NOTE
+        if (type === 'CREDIT_NOTE' && !sourceInvoiceId) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sourceInvoiceId'],
+            message: 'Una Nota de Crédito debe referenciar la factura original (sourceInvoiceId requerido)',
+          });
+        }
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -216,9 +208,37 @@ export const invoicingRouter = createTRPCRouter({
         taxRate,
       );
 
-      // ── CREDIT_NOTE: nota de crédito — reversa de inventario y balance ─────
+      // ── CREDIT_NOTE ────────────────────────────────────────────────────────
       if (type === 'CREDIT_NOTE') {
         return ctx.db.$transaction(async (tx) => {
+          // Validar factura origen: debe existir, pertenecer al mismo cliente,
+          // y estar en estado que admita devolución.
+          const sourceInvoice = await tx.invoice.findUnique({
+            where: { id: rest.sourceInvoiceId! },
+            select: { customerId: true, status: true, type: true, invoiceNumber: true },
+          });
+          if (!sourceInvoice) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: 'Factura original no encontrada' });
+          }
+          if (sourceInvoice.customerId !== rest.customerId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'La factura original no pertenece al mismo cliente',
+            });
+          }
+          if (sourceInvoice.type !== 'INVOICE') {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'Solo se puede crear una NC sobre una factura de tipo INVOICE',
+            });
+          }
+          if (!['ISSUED', 'PARTIAL', 'PAID'].includes(sourceInvoice.status)) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `No se puede crear una NC sobre una factura con estado ${sourceInvoice.status}`,
+            });
+          }
+
           const invoiceNumber = await getNextSequenceValue(tx, 'CREDIT_NOTE');
           const invoiceItemsData = itemsData.map((d, idx) => ({
             ...d,
@@ -241,6 +261,7 @@ export const invoicingRouter = createTRPCRouter({
             include: { items: true },
           });
 
+          // Crear movimientos RETURN y reponer stock
           for (const item of items) {
             await tx.inventoryMovement.create({
               data: {
@@ -260,18 +281,11 @@ export const invoicingRouter = createTRPCRouter({
             });
           }
 
+          // Decrementar balance del cliente (la NC reduce lo que debe)
           await tx.customer.update({
             where: { id: input.customerId },
             data: { currentBalance: { decrement: total } },
           });
-
-          const auditValues: Record<string, unknown> = {
-            invoiceNumber,
-            type: 'CREDIT_NOTE',
-            total: total.toString(),
-            itemCount: items.length,
-          };
-          if (belowCostItems.length > 0) auditValues.belowCostItems = belowCostItems;
 
           await tx.auditLog.create({
             data: {
@@ -279,7 +293,14 @@ export const invoicingRouter = createTRPCRouter({
               action: 'CREATE_CREDIT_NOTE',
               entityType: 'Invoice',
               entityId: created.id,
-              newValues: auditValues as Prisma.InputJsonValue,
+              newValues: {
+                invoiceNumber,
+                type: 'CREDIT_NOTE',
+                total: total.toString(),
+                itemCount: items.length,
+                sourceInvoiceId: rest.sourceInvoiceId,
+                sourceInvoiceNumber: sourceInvoice.invoiceNumber,
+              } as Prisma.InputJsonValue,
               ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
             },
           });
@@ -288,11 +309,10 @@ export const invoicingRouter = createTRPCRouter({
         });
       }
 
-      // Role declared here (not in INVOICE-only block) so Bug 2.7 pricing applies to both paths.
       const role = (ctx.session!.user as { role?: string }).role ?? 'VENDOR';
       const canOverrideStock = role === 'ADMIN' || role === 'MANAGER';
 
-      // Bug 2.7: validate minimum price (Option A — applies to QUOTE and INVOICE).
+      // Validar productos activos y precios mínimos (aplica a QUOTE e INVOICE)
       const productIds = [...new Set(items.map((i) => i.productId))];
       const pricedProducts = await ctx.db.product.findMany({
         where: { id: { in: productIds } },
@@ -315,13 +335,23 @@ export const invoicingRouter = createTRPCRouter({
       }));
       const belowCostItems = validateItemPricing(pricingItems, productMap, role);
 
-      // ── QUOTE: sin movimientos de inventario ──────────────────────────────
-      // Cotizaciones no descuentan stock ni bloquean ubicaciones.
-      // Usan la secuencia QUOTE (COT-XXXXX), no la secuencia INVOICE.
+      // Validar que el cliente esté activo
+      const customer = await ctx.db.customer.findUnique({
+        where: { id: input.customerId },
+        select: { isActive: true, name: true },
+      });
+      if (!customer?.isActive) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `El cliente no está activo`,
+        });
+      }
+
+      // ── QUOTE: sin movimientos ni reservas ────────────────────────────────
       if (type === 'QUOTE') {
         return ctx.db.$transaction(async (tx) => {
           const invoiceNumber = await getNextSequenceValue(tx, 'QUOTE');
-          return tx.invoice.create({
+          const created = await tx.invoice.create({
             data: {
               ...rest,
               type,
@@ -336,21 +366,37 @@ export const invoicingRouter = createTRPCRouter({
             },
             include: { items: true },
           });
+
+          await tx.auditLog.create({
+            data: {
+              userId: ctx.session!.user!.id!,
+              action: 'CREATE',
+              entityType: 'Invoice',
+              entityId: created.id,
+              newValues: {
+                invoiceNumber,
+                type: 'QUOTE',
+                status: 'ISSUED',
+                itemCount: items.length,
+                total: total.toString(),
+                ...(belowCostItems.length > 0 && { belowCostItems, authorizedBy: role }),
+              } as Prisma.InputJsonValue,
+              ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+            },
+          });
+
+          return created;
         });
       }
 
-      // ── INVOICE: transacción completa con lock pesimista y movimientos ─────
-      // Añade locationId a cada item — necesario para que authorizeBackorder
-      // pueda releer la ubicación original desde invoice_items al autorizar.
+      // ── INVOICE: transacción con lock pesimista y movimientos ─────────────
       const invoiceItemsData = itemsData.map((d, idx) => ({
         ...d,
         locationId: items[idx]!.locationId,
       }));
 
       const invoice = await ctx.db.$transaction(async (tx) => {
-        // 1. Lock todas las ubicaciones afectadas, en orden ascendente por ID.
-        //    El orden consistente previene deadlocks cuando dos facturas concurrentes
-        //    bloquean los mismos productos en distinto orden de items.
+        // 1. Lock de ubicaciones en orden ascendente (previene deadlocks)
         const locationIds = [...new Set(items.map((i) => i.locationId!))].sort();
         const lockedLocations = new Map<string, LocationRow>();
 
@@ -370,7 +416,7 @@ export const invoicingRouter = createTRPCRouter({
           lockedLocations.set(locId, rows[0]!);
         }
 
-        // 2. Validar que cada ubicación pertenece al producto declarado en el item.
+        // 2. Verificar que cada ubicación pertenezca al producto declarado
         for (const item of items) {
           const loc = lockedLocations.get(item.locationId!)!;
           if (loc.productId !== item.productId) {
@@ -381,8 +427,7 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        // 3. Verificar disponibilidad. Usa calculateAvailableStock (quantityOnHand -
-        //    reservedQuantity) para respetar reservas de facturas DRAFT en vuelo.
+        // 3. Verificar disponibilidad (respeta reservedQuantity de PENDING invoices)
         const shortages: Array<{ productId: string; requested: number; available: number }> = [];
         for (const item of items) {
           const loc = lockedLocations.get(item.locationId!)!;
@@ -395,8 +440,7 @@ export const invoicingRouter = createTRPCRouter({
         const hasShortage = shortages.length > 0;
         const invoiceNumber = await getNextSequenceValue(tx, 'INVOICE');
 
-        // 4a. VENDOR con stock insuficiente → PENDING_AUTHORIZATION, sin movimientos.
-        //     El stock NO se toca hasta que un MANAGER autorice la factura.
+        // 4a. VENDOR con stock insuficiente → PENDING_AUTHORIZATION
         if (hasShortage && !canOverrideStock) {
           const created = await tx.invoice.create({
             data: {
@@ -414,7 +458,6 @@ export const invoicingRouter = createTRPCRouter({
             include: { items: true },
           });
 
-          // Reserve stock for PENDING_AUTHORIZATION so calculateAvailableStock is accurate.
           for (const item of items) {
             await tx.productLocation.update({
               where: { id: item.locationId! },
@@ -441,7 +484,7 @@ export const invoicingRouter = createTRPCRouter({
           return created;
         }
 
-        // 4b. Stock suficiente, o MANAGER/ADMIN override → ISSUED con movimientos.
+        // 4b. Stock suficiente o MANAGER/ADMIN override → ISSUED
         const created = await tx.invoice.create({
           data: {
             ...rest,
@@ -458,8 +501,6 @@ export const invoicingRouter = createTRPCRouter({
           include: { items: true },
         });
 
-        // 5. Movimientos OUT y decremento de stock por cada item.
-        //    quantity negativo: convención de signos del Bug 1.3 (OUT → quantity < 0).
         for (const item of items) {
           await tx.inventoryMovement.create({
             data: {
@@ -480,14 +521,11 @@ export const invoicingRouter = createTRPCRouter({
           });
         }
 
-        // 6. Bug 2.4: increment customer.currentBalance by the invoice total.
         await tx.customer.update({
           where: { id: input.customerId },
           data: { currentBalance: { increment: total } },
         });
 
-        // 7. Audit log. Si MANAGER forzó stock negativo, lo registra explícitamente
-        //    para que quede trazabilidad del override en el log de auditoría.
         const auditValues: Record<string, unknown> = {
           invoiceNumber,
           status: 'ISSUED',
@@ -536,15 +574,14 @@ export const invoicingRouter = createTRPCRouter({
       const invoice = await ctx.db.invoice.findUnique({ where: { id: input.invoiceId } });
       if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      // Type guard: QUOTE cannot receive payments
-      if (invoice.type === 'QUOTE') {
+      // Solo INVOICE acepta pagos (no QUOTE ni CREDIT_NOTE)
+      if (invoice.type !== 'INVOICE') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'No se pueden registrar pagos a cotizaciones. Convierte a factura primero.',
+          message: `No se pueden registrar pagos en documentos de tipo ${invoice.type}.`,
         });
       }
 
-      // Status guards: only ISSUED and PARTIAL accept payments
       if (invoice.status === 'VOIDED')
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'La factura está anulada.' });
       if (invoice.status === 'PAID')
@@ -565,7 +602,7 @@ export const invoicingRouter = createTRPCRouter({
           message: 'Esta cotización ya fue convertida a factura. El pago debe aplicarse a la factura derivada.',
         });
 
-      // creditLimit check for CREDIT method
+      // Verificar límite de crédito cuando el método es CREDIT
       if (input.method === 'CREDIT') {
         const customer = await ctx.db.customer.findUnique({
           where: { id: invoice.customerId },
@@ -610,7 +647,7 @@ export const invoicingRouter = createTRPCRouter({
           data: { paidAmount: totalPaid, status: newStatus },
         });
 
-        // Bug 2.4: decrement customer.currentBalance by the payment amount
+        // Decrementar balance del cliente al recibir pago
         await tx.customer.update({
           where: { id: invoice.customerId },
           data: { currentBalance: { decrement: toDecimal(input.amount) } },
@@ -639,7 +676,8 @@ export const invoicingRouter = createTRPCRouter({
       });
     }),
 
-  void: protectedProcedure
+  // void requiere MANAGER o ADMIN — un VENDOR no puede anular sus propias facturas
+  void: managerProcedure
     .input(z.object({ id: z.string().cuid(), reason: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
       const invoice = await ctx.db.invoice.findUnique({
@@ -666,8 +704,8 @@ export const invoicingRouter = createTRPCRouter({
           },
         });
 
-        // Regla 3 (ADR-002): if voiding an INVOICE derived from a QUOTE, revert the
-        // QUOTE from CONVERTED back to ISSUED when no other active INVOICEs remain.
+        // Si se anula una INVOICE derivada de una QUOTE, revertir la QUOTE a ISSUED
+        // cuando no quedan otras INVOICEs activas de esa cotización.
         if (invoice.sourceQuoteId) {
           const otherActive = await tx.invoice.count({
             where: {
@@ -684,20 +722,16 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        // Bug 2.2: restore inventory when voiding a stock-decremented INVOICE.
-        // Only ISSUED and PARTIAL had OUT movements created (PENDING_AUTHORIZATION did not).
-        // QUOTE never creates OUT movements so it is excluded by type check.
-        const needsInventoryReversal =
+        // ── Reversa de inventario para INVOICE en ISSUED o PARTIAL ───────────
+        const needsInvoiceReversal =
           invoice.type === 'INVOICE' &&
           (invoice.status === 'ISSUED' || invoice.status === 'PARTIAL');
 
         const orphanItems: Array<{ productId: string; quantity: number }> = [];
 
-        if (needsInventoryReversal) {
+        if (needsInvoiceReversal) {
           for (const item of invoice.items) {
             if (!item.locationId) {
-              // ON DELETE SET NULL nullified this item's location — cannot restore stock.
-              // Log for traceability; do not block the void.
               orphanItems.push({ productId: item.productId, quantity: item.quantity });
               continue;
             }
@@ -707,7 +741,7 @@ export const invoicingRouter = createTRPCRouter({
                 productId: item.productId,
                 locationId: item.locationId,
                 movementType: 'RETURN',
-                quantity: item.quantity, // positive: stock re-entry (sign convention)
+                quantity: item.quantity,
                 referenceType: 'INVOICE',
                 referenceId: invoice.invoiceNumber,
                 userId: ctx.session!.user!.id!,
@@ -720,20 +754,18 @@ export const invoicingRouter = createTRPCRouter({
               data: { quantityOnHand: { increment: item.quantity } },
             });
           }
-        }
 
-        // Balance adjustment on void:
-        // - ISSUED: remove full total from currentBalance (paidAmount=0, so total-paidAmount=total)
-        // - PARTIAL: remove the full total; the paidAmount portion becomes negative balance (credit to client)
-        if (needsInventoryReversal) {
+          // Decrement only the outstanding balance (total - paidAmount).
+          // For ISSUED (paidAmount=0) this equals total. For PARTIAL, only the
+          // unpaid portion remains in currentBalance — decrementing total would go negative.
+          const outstandingBalance = invoice.total.sub(invoice.paidAmount);
           await tx.customer.update({
             where: { id: invoice.customerId },
-            data: { currentBalance: { decrement: invoice.total } },
+            data: { currentBalance: { decrement: outstandingBalance } },
           });
         }
 
-        // PENDING_AUTHORIZATION: no inventory movements, no balance changes, but we need
-        // to clean up any reservedQuantity that was set when the invoice was created.
+        // ── Liberación de reservas para INVOICE en PENDING_AUTHORIZATION ─────
         if (invoice.type === 'INVOICE' && invoice.status === 'PENDING_AUTHORIZATION') {
           for (const item of invoice.items) {
             if (!item.locationId) continue;
@@ -744,7 +776,51 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        const auditNewValues: Record<string, unknown> = { reason: input.reason };
+        // ── Reversa de inventario para CREDIT_NOTE ───────────────────────────
+        // La CN había creado movimientos RETURN (stock aumentó y balance bajó).
+        // Al anularla: revertir el stock con ADJUSTMENT negativo y restaurar el balance.
+        const needsCreditNoteReversal =
+          invoice.type === 'CREDIT_NOTE' && invoice.status === 'ISSUED';
+
+        if (needsCreditNoteReversal) {
+          for (const item of invoice.items) {
+            if (!item.locationId) {
+              orphanItems.push({ productId: item.productId, quantity: item.quantity });
+              continue;
+            }
+
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                locationId: item.locationId,
+                movementType: 'ADJUSTMENT',
+                quantity: -item.quantity, // negativo: revierte el RETURN de la CN
+                referenceType: 'INVOICE',
+                referenceId: invoice.invoiceNumber,
+                userId: ctx.session!.user!.id!,
+                notes: `Reversa de NC anulada ${invoice.invoiceNumber}`,
+                ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+              },
+            });
+
+            await tx.productLocation.update({
+              where: { id: item.locationId },
+              data: { quantityOnHand: { decrement: item.quantity } },
+            });
+          }
+
+          // Restaurar el balance del cliente (deshacer el crédito aplicado por la CN)
+          await tx.customer.update({
+            where: { id: invoice.customerId },
+            data: { currentBalance: { increment: invoice.total } },
+          });
+        }
+
+        const auditNewValues: Record<string, unknown> = {
+          reason: input.reason,
+          type: invoice.type,
+          previousStatus: invoice.status,
+        };
         if (orphanItems.length > 0) {
           auditNewValues.stockNotRestoredItems = orphanItems;
           auditNewValues.stockNotRestoredReason =
@@ -766,7 +842,8 @@ export const invoicingRouter = createTRPCRouter({
       });
     }),
 
-  authorizeBackorder: protectedProcedure
+  // authorizeBackorder usa managerProcedure directamente (consistente con el resto del codebase)
+  authorizeBackorder: managerProcedure
     .input(
       z.object({
         id: z.string().cuid(),
@@ -774,14 +851,6 @@ export const invoicingRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const role = (ctx.session!.user as { role?: string }).role ?? 'VENDOR';
-      if (role !== 'ADMIN' && role !== 'MANAGER') {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Solo MANAGER o ADMIN pueden autorizar backorders.',
-        });
-      }
-
       const invoice = await ctx.db.invoice.findUnique({
         where: { id: input.id },
         include: { items: true },
@@ -794,10 +863,6 @@ export const invoicingRouter = createTRPCRouter({
         });
       }
 
-      // ON DELETE SET NULL could have nulled locationId if the ProductLocation was
-      // deleted between invoice creation and authorization. We cannot create a movement
-      // to a non-existent location — fail explicitly so the manager knows to recreate
-      // the invoice with valid locations.
       const orphanItems = invoice.items.filter((i) => !i.locationId);
       if (orphanItems.length > 0) {
         throw new TRPCError({
@@ -807,7 +872,6 @@ export const invoicingRouter = createTRPCRouter({
       }
 
       return ctx.db.$transaction(async (tx) => {
-        // Lock all affected locations in ascending ID order to prevent deadlocks.
         const locationIds = [...new Set(invoice.items.map((i) => i.locationId!))].sort();
 
         for (const locId of locationIds) {
@@ -822,8 +886,6 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        // Release reserved quantity and create OUT movements.
-        // Stock may go negative — that is the explicit MANAGER decision being recorded here.
         for (const item of invoice.items) {
           await tx.inventoryMovement.create({
             data: {
@@ -853,7 +915,6 @@ export const invoicingRouter = createTRPCRouter({
           include: { items: true },
         });
 
-        // Bug 2.4: now that stock is committed, add to customer.currentBalance.
         await tx.customer.update({
           where: { id: invoice.customerId },
           data: { currentBalance: { increment: invoice.total } },
@@ -885,8 +946,6 @@ export const invoicingRouter = createTRPCRouter({
     .input(
       z.object({
         quoteId: z.string().cuid(),
-        // Each item must carry locationId — QUOTE items have locationId=NULL in DB.
-        // If undefined, the frontend must provide it; there is no auto-selection yet.
         items: z
           .array(
             z.object({
@@ -928,13 +987,20 @@ export const invoicingRouter = createTRPCRouter({
         });
       }
 
-      // Regla 4 (ADR-002): fast-path check before entering the transaction.
-      // Authoritative re-check happens under pessimistic lock inside the transaction.
+      // Verificar que el cliente siga activo antes de convertir
+      const customer = await ctx.db.customer.findUnique({
+        where: { id: quote.customerId },
+        select: { isActive: true, name: true },
+      });
+      if (!customer?.isActive) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `El cliente no está activo. No se puede convertir la cotización.`,
+        });
+      }
+
       const existingActive = await ctx.db.invoice.findFirst({
-        where: {
-          sourceQuoteId: input.quoteId,
-          status: { notIn: ['VOIDED'] },
-        },
+        where: { sourceQuoteId: input.quoteId, status: { notIn: ['VOIDED'] } },
         select: { invoiceNumber: true },
       });
       if (existingActive) {
@@ -944,8 +1010,6 @@ export const invoicingRouter = createTRPCRouter({
         });
       }
 
-      // Option A: inherit unit prices and discounts from original QUOTE items.
-      // Cotizaciones son compromisos comerciales — el precio acordado no cambia al convertir.
       const quotePriceMap = new Map(
         quote.items.map((qi) => [
           qi.productId,
@@ -962,8 +1026,6 @@ export const invoicingRouter = createTRPCRouter({
         }
       }
 
-      // Build invoice items with inherited prices. quantity comes from resolvedItems
-      // (may differ from quote — client may buy partial quantities).
       const invoiceItemsData = resolvedItems.map((item) => {
         const price = quotePriceMap.get(item.productId)!;
         const discountFactor = toDecimal(1).sub(price.discountPercent.div(100));
@@ -981,17 +1043,13 @@ export const invoicingRouter = createTRPCRouter({
         (sum, i) => sum.add(i.lineTotal),
         toDecimal(0)
       );
-      // Tax rate is NOT inherited — IVU is a legal obligation at the time of sale,
-      // not a commercial commitment like price. Use current default rate.
-      // If multi-municipality IVU is implemented later, derive from customer.municipality.
-      const taxRateDecimal = toDecimal(0.115); // Current PR IVU
+      const taxRateDecimal = toDecimal(0.115);
       const taxAmount = subtotal.mul(taxRateDecimal);
       const total = subtotal.add(taxAmount);
 
       const role = (ctx.session!.user as { role?: string }).role ?? 'VENDOR';
       const canOverrideStock = role === 'ADMIN' || role === 'MANAGER';
 
-      // Bug 2.7: validate minimum price at conversion time (prices inherited from QUOTE).
       const productIdsForCost = [...new Set(resolvedItems.map((i) => i.productId))];
       const pricedProductsForConvert = await ctx.db.product.findMany({
         where: { id: { in: productIdsForCost } },
@@ -1011,19 +1069,12 @@ export const invoicingRouter = createTRPCRouter({
       const belowCostItems = validateItemPricing(convertPricingItems, productCostMap, role);
 
       return ctx.db.$transaction(async (tx) => {
-        // Lock the QUOTE row first to serialize concurrent convertQuoteToInvoice calls.
-        // A second concurrent call waits here; once it acquires the lock, the QUOTE
-        // status will be CONVERTED and the status check below will fail cleanly.
         await tx.$queryRaw`
           SELECT id FROM invoices WHERE id = ${input.quoteId} FOR UPDATE
         `;
 
-        // Authoritative Regla 4 re-check under lock (prevents TOCTOU race).
         const activeUnderLock = await tx.invoice.findFirst({
-          where: {
-            sourceQuoteId: input.quoteId,
-            status: { notIn: ['VOIDED'] },
-          },
+          where: { sourceQuoteId: input.quoteId, status: { notIn: ['VOIDED'] } },
           select: { invoiceNumber: true },
         });
         if (activeUnderLock) {
@@ -1033,7 +1084,6 @@ export const invoicingRouter = createTRPCRouter({
           });
         }
 
-        // Lock all product locations in ascending ID order to prevent deadlocks.
         const locationIds = [...new Set(resolvedItems.map((i) => i.locationId))].sort();
         const lockedLocations = new Map<string, LocationRow>();
 
@@ -1045,15 +1095,11 @@ export const invoicingRouter = createTRPCRouter({
             FOR UPDATE
           `;
           if (!rows[0]) {
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: `Ubicación '${locId}' no encontrada.`,
-            });
+            throw new TRPCError({ code: 'NOT_FOUND', message: `Ubicación '${locId}' no encontrada.` });
           }
           lockedLocations.set(locId, rows[0]!);
         }
 
-        // Validate each location belongs to the declared product.
         for (const item of resolvedItems) {
           const loc = lockedLocations.get(item.locationId)!;
           if (loc.productId !== item.productId) {
@@ -1064,8 +1110,6 @@ export const invoicingRouter = createTRPCRouter({
           }
         }
 
-        // Re-validate stock availability at conversion time.
-        // The QUOTE may have been created weeks ago; stock may have changed.
         const shortages: Array<{ productId: string; requested: number; available: number }> = [];
         for (const item of resolvedItems) {
           const loc = lockedLocations.get(item.locationId)!;
@@ -1080,7 +1124,6 @@ export const invoicingRouter = createTRPCRouter({
         const invoiceStatus =
           hasShortage && !canOverrideStock ? 'PENDING_AUTHORIZATION' : 'ISSUED';
 
-        // Create the new INVOICE derived from the QUOTE.
         const newInvoice = await tx.invoice.create({
           data: {
             customerId: quote.customerId,
@@ -1092,9 +1135,6 @@ export const invoicingRouter = createTRPCRouter({
             total,
             createdById: ctx.session!.user!.id!,
             status: invoiceStatus,
-            // dueDate is NOT inherited — QUOTE.dueDate means "quote validity",
-            // INVOICE.dueDate means "payment due date". Different concepts.
-            // Future: derive from customer.paymentTerms (NET-30, etc.) — see TD-008.
             dueDate: null,
             sourceQuoteId: input.quoteId,
             items: { create: invoiceItemsData },
@@ -1102,7 +1142,6 @@ export const invoicingRouter = createTRPCRouter({
           include: { items: true },
         });
 
-        // Create OUT movements only when ISSUED (stock confirmed or MANAGER override).
         if (invoiceStatus === 'ISSUED') {
           for (const item of resolvedItems) {
             await tx.inventoryMovement.create({
@@ -1124,14 +1163,20 @@ export const invoicingRouter = createTRPCRouter({
             });
           }
 
-          // Bug 2.4: INVOICE is now committed — add to customer.currentBalance.
           await tx.customer.update({
             where: { id: quote.customerId },
             data: { currentBalance: { increment: total } },
           });
+        } else {
+          // PENDING_AUTHORIZATION: reservar stock
+          for (const item of resolvedItems) {
+            await tx.productLocation.update({
+              where: { id: item.locationId },
+              data: { reservedQuantity: { increment: item.quantity } },
+            });
+          }
         }
 
-        // Mark original QUOTE as CONVERTED (Regla 2, ADR-002).
         await tx.invoice.update({
           where: { id: input.quoteId },
           data: { status: 'CONVERTED' },
@@ -1145,7 +1190,6 @@ export const invoicingRouter = createTRPCRouter({
           itemCount: resolvedItems.length,
           total: total.toString(),
           priceInheritedFromQuote: true,
-          taxRateInheritedFromQuote: false,
           taxRateApplied: taxRateDecimal.toString(),
         };
         if (hasShortage && !canOverrideStock) {

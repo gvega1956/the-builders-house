@@ -22,16 +22,17 @@ export const customersRouter = createTRPCRouter({
       z.object({
         search: z.string().optional(),
         type: z.enum(['RETAIL', 'WHOLESALE']).optional(),
+        includeInactive: z.boolean().optional(),
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(1000).default(50),
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { search, type, page = 1, pageSize = 50 } = input ?? {};
+      const { search, type, includeInactive, page = 1, pageSize = 50 } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.CustomerWhereInput = {
-        isActive: true,
+        ...(includeInactive ? {} : { isActive: true }),
         ...(type && { type }),
         ...(search && {
           OR: [

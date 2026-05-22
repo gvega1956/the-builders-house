@@ -192,7 +192,9 @@ describe('Bug 2.3 — addPayment no excede balance', () => {
       items: [{ productId, locationId, quantity: 1, unitPrice: 50 }],
       taxRate: 0.115,
     });
-    await vendor.void({ id: invoice.id, reason: 'Cancelado' });
+    // void requires MANAGER (B-2 fix)
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Cancelado' });
 
     await expect(
       vendor.addPayment({ invoiceId: invoice.id, amount: 10, method: 'CASH' })
@@ -361,7 +363,8 @@ describe('Bug 2.4 — currentBalance del cliente', () => {
     expect(Number((await db.customer.findUnique({ where: { id: customerId } }))!.currentBalance))
       .toBeCloseTo(invoiceTotal, 2);
 
-    await vendor.void({ id: invoice.id, reason: 'Cancelación total' });
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Cancelación total' });
 
     const after = await db.customer.findUnique({ where: { id: customerId } });
     expect(Number(after!.currentBalance)).toBeCloseTo(0, 2);
@@ -380,7 +383,8 @@ describe('Bug 2.4 — currentBalance del cliente', () => {
     await vendor.addPayment({ invoiceId: invoice.id, amount: 100, method: 'CASH' });
     // customer.currentBalance = 200 - 100 = 100
 
-    await vendor.void({ id: invoice.id, reason: 'Devolución con pago parcial' });
+    const manager = makeCaller(managerId, 'MANAGER');
+    await manager.void({ id: invoice.id, reason: 'Devolución con pago parcial' });
     // void decrement = total - paidAmount = 200 - 100 = 100
     // customer.currentBalance = 100 - 100 = 0
 
