@@ -7,7 +7,7 @@ export const metadata = { title: 'Dashboard — The Builder\'s House' };
 export default async function DashboardPage() {
   const session = await auth();
   const dbUser = session?.user?.id
-    ? await db.user.findUnique({ where: { id: session.user.id }, select: { name: true } })
+    ? await db.user.findUnique({ where: { id: session.user.id }, select: { name: true } }).catch(() => null)
     : null;
   const userName = dbUser?.name ?? session?.user?.name ?? 'equipo';
   return <DashboardClient userName={userName} />;

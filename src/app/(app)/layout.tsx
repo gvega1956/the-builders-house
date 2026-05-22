@@ -12,7 +12,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const dbUser = await db.user.findUnique({
     where: { id: session.user.id },
     select: { name: true },
-  });
+  }).catch(() => null);
   const freshUser = { ...session.user, name: dbUser?.name ?? session.user.name };
 
   return (
