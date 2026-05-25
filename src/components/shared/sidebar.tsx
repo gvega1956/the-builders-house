@@ -104,7 +104,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         <NavSection label="Operación" />
         <NavItem icon={LayoutDashboard} label="Dashboard" href="/dashboard" />
-        <NavItem icon={Package} label="Inventario" href="/inventory" badge="383" />
+        <NavItem icon={Package} label="Inventario" href="/inventory" />
         <NavItem icon={ScanLine} label="Escaneo" href="/scan" />
         <NavItem icon={Warehouse} label="Warehouse" href="/warehouse" />
         <NavItem icon={ClipboardCheck} label="Conteos Cíclicos" href="/cycle-counts" />
@@ -113,7 +113,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
         <NavItem icon={ShoppingCart} label="POS" href="/pos" />
         <NavItem icon={Receipt} label="Facturación" href="/invoicing" />
         <NavItem icon={Users} label="Clientes" href="/customers" />
-        <NavItem icon={Truck} label="Compras · RD" href="/purchases" badge="3" />
+        <NavItem icon={Truck} label="Compras · RD" href="/purchases" />
 
         <NavSection label="Inteligencia" />
         <NavItem icon={BarChart3} label="Reportes" href="/reports" />

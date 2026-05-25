@@ -40,8 +40,26 @@ const kpiAccent = {
   ].join(', '),
 } as React.CSSProperties;
 
+const kpiColorStyles = {
+  blue: {
+    card: { ...kpiBase, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.25)' } as React.CSSProperties,
+    icon: { backgroundColor: 'rgba(59,130,246,0.12)' },
+    iconColor: '#3B82F6',
+  },
+  green: {
+    card: { ...kpiBase, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)' } as React.CSSProperties,
+    icon: { backgroundColor: 'rgba(16,185,129,0.12)' },
+    iconColor: '#10B981',
+  },
+  amber: {
+    card: { ...kpiBase, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)' } as React.CSSProperties,
+    icon: { backgroundColor: 'rgba(245,158,11,0.12)' },
+    iconColor: '#F59E0B',
+  },
+};
+
 function KPICard({
-  label, value, change, trend, icon: Icon, prefix = '', accent = false,
+  label, value, change, trend, icon: Icon, prefix = '', accent = false, color,
 }: {
   label: string;
   value: string;
@@ -50,23 +68,25 @@ function KPICard({
   icon: React.ElementType;
   prefix?: string;
   accent?: boolean;
+  color?: 'blue' | 'green' | 'amber';
 }) {
+  const colorStyle = color ? kpiColorStyles[color] : null;
+  const cardStyle = accent ? kpiAccent : colorStyle ? colorStyle.card : kpiBase;
+
   return (
     <div
       className="rounded-2xl p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-default"
-      style={accent ? kpiAccent : kpiBase}
+      style={cardStyle}
     >
       <div className="flex items-start justify-between mb-3">
         <div
           className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{
-            backgroundColor: accent ? `rgba(236,99,38,0.12)` : `rgba(10,22,40,0.07)`,
-          }}
+          style={colorStyle ? colorStyle.icon : { backgroundColor: accent ? `rgba(236,99,38,0.12)` : `rgba(10,22,40,0.07)` }}
         >
           <Icon
             size={17}
             strokeWidth={2}
-            style={{ color: accent ? brand.orange[500] : brand.navy[700] }}
+            style={{ color: colorStyle ? colorStyle.iconColor : accent ? brand.orange[500] : brand.navy[700] }}
           />
         </div>
         {change && (
@@ -210,16 +230,19 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           label="Unidades vendidas"
           value={String(kpis?.unitsSold ?? 0)}
           icon={Package}
+          color="blue"
         />
         <KPICard
           label="Valor de inventario"
           value={formatCurrency(kpis?.inventoryValue ?? 0)}
           icon={Boxes}
+          color="green"
         />
         <KPICard
           label="Margen bruto"
           value={`${grossMargin.toFixed(1)}%`}
           icon={TrendingUp}
+          color="amber"
         />
       </div>
 
