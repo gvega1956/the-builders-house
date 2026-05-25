@@ -173,6 +173,18 @@ model LoginAttempt {
 }
 
 // ─────────────────────────────────────────────────────────────
+// CONFIGURACIÓN DEL SISTEMA
+// ─────────────────────────────────────────────────────────────
+
+model SystemConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("system_config")
+}
+
+// ─────────────────────────────────────────────────────────────
 // INVENTARIO
 // ─────────────────────────────────────────────────────────────
 

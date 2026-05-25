@@ -19,8 +19,6 @@ type CartItem = {
   lineTotal: number;
 };
 
-const TAX_RATE = 0.115;
-
 const PAYMENT_LABELS: Record<string, string> = {
   CASH: 'Efectivo', CHECK: 'Cheque', TRANSFER: 'Transferencia', CARD: 'Tarjeta', CREDIT: 'Crédito',
 };
@@ -36,6 +34,9 @@ export function PosClient() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
+  const TAX_RATE = sysConfig?.TAX_RATE ? Number(sysConfig.TAX_RATE) : 0.115;
 
   const { data: productData } = trpc.products.list.useQuery(
     { search, pageSize: 12 },
@@ -270,7 +271,7 @@ export function PosClient() {
                 <span>Subtotal</span><span>{formatCurrency(subtotal)}</span>
               </div>
               <div className="flex justify-between text-xs mb-1" style={{ color: '#64748B' }}>
-                <span>IVU 11.5%</span><span>{formatCurrency(taxAmount)}</span>
+                <span>IVU {(TAX_RATE * 100).toFixed(1)}%</span><span>{formatCurrency(taxAmount)}</span>
               </div>
               <div className="flex justify-between text-sm font-bold mt-1.5" style={{ color: brand.navy[950] }}>
                 <span>Total</span><span style={{ color: brand.orange[500] }}>{formatCurrency(total)}</span>
@@ -378,7 +379,7 @@ export function PosClient() {
               <span>Subtotal</span><span>{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between text-xs" style={{ color: '#64748B' }}>
-              <span>IVU 11.5%</span><span>{formatCurrency(taxAmount)}</span>
+              <span>IVU {(TAX_RATE * 100).toFixed(1)}%</span><span>{formatCurrency(taxAmount)}</span>
             </div>
             <div className="flex justify-between text-base font-bold pt-2"
               style={{ borderTop: '1px solid rgba(10,22,40,0.08)', color: brand.navy[950] }}>

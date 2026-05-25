@@ -5,13 +5,14 @@ import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
-import { Plus, X, Users, Tag, Warehouse, Truck, Pencil } from 'lucide-react';
+import { Plus, X, Users, Tag, Warehouse, Truck, Pencil, SlidersHorizontal } from 'lucide-react';
 
 const TABS = [
   { id: 'users', label: 'Usuarios', icon: Users },
   { id: 'categories', label: 'Categorías', icon: Tag },
   { id: 'warehouses', label: 'Almacenes', icon: Warehouse },
   { id: 'suppliers', label: 'Proveedores', icon: Truck },
+  { id: 'fiscal', label: 'Fiscal', icon: SlidersHorizontal },
 ] as const;
 
 type Tab = typeof TABS[number]['id'];
@@ -56,6 +57,16 @@ export function SettingsClient() {
   const [plProductId, setPlProductId] = useState('');
   const [plCode, setPlCode] = useState('');
   const [plQty, setPlQty] = useState(0);
+
+  const { data: sysConfig, refetch: refetchConfig } = trpc.settings.getSystemConfig.useQuery();
+  const setConfig = trpc.settings.setSystemConfig.useMutation({ onSuccess: () => refetchConfig() });
+
+  const [taxRateInput, setTaxRateInput] = useState('');
+  React.useEffect(() => {
+    if (sysConfig?.TAX_RATE && taxRateInput === '') {
+      setTaxRateInput((Number(sysConfig.TAX_RATE) * 100).toFixed(2));
+    }
+  }, [sysConfig, taxRateInput]);
 
   const { data: users, refetch: refetchUsers } = trpc.settings.users.useQuery();
   const { data: categories, refetch: refetchCats } = trpc.settings.categories.useQuery();
@@ -350,6 +361,61 @@ export function SettingsClient() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ── FISCAL ── */}
+      {tab === 'fiscal' && (
+        <div className="space-y-4">
+          <div style={glass} className="rounded-2xl p-6 max-w-lg">
+            <h2 className="font-bold text-sm mb-1" style={{ color: brand.navy[950] }}>Impuesto sobre Ventas (IVU)</h2>
+            <p className="text-xs mb-4" style={{ color: '#64748B' }}>
+              Puerto Rico: 10.5% estatal + hasta 1% municipal = 11.5% estándar.
+              Este valor se aplica automáticamente a todas las facturas y el POS.
+            </p>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                  Tasa IVU (%)
+                </label>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="25"
+                    value={taxRateInput}
+                    onChange={(e) => setTaxRateInput(e.target.value)}
+                    className="flex-1 text-sm outline-none font-mono"
+                    style={{ color: brand.navy[900] }}
+                  />
+                  <span className="text-sm font-bold" style={{ color: '#94A3B8' }}>%</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  const pct = Number(taxRateInput);
+                  if (isNaN(pct) || pct < 0 || pct > 25) return;
+                  setConfig.mutate({ key: 'TAX_RATE', value: (pct / 100).toFixed(4) });
+                }}
+                disabled={setConfig.isPending}
+                className="px-4 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
+                style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+                {setConfig.isPending ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+            {setConfig.isSuccess && (
+              <p className="text-xs mt-3 font-medium" style={{ color: '#16A34A' }}>
+                Tasa actualizada a {taxRateInput}% — se aplicará en todas las facturas nuevas.
+              </p>
+            )}
+            <div className="mt-4 p-3 rounded-xl" style={{ backgroundColor: 'rgba(10,22,40,0.03)' }}>
+              <div className="text-xs font-semibold mb-1" style={{ color: brand.navy[700] }}>Tasa actual en base de datos</div>
+              <div className="text-lg font-bold font-mono" style={{ color: brand.orange[500] }}>
+                {sysConfig?.TAX_RATE ? (Number(sysConfig.TAX_RATE) * 100).toFixed(2) : '—'}%
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

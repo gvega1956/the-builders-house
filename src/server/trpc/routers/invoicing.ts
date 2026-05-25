@@ -202,7 +202,12 @@ export const invoicingRouter = createTRPCRouter({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const { items, taxRate, type, ...rest } = input;
+      const { items, type, ...rest } = input;
+
+      // Leer tasa configurada en DB — ignora taxRate del cliente para evitar manipulación
+      const taxConfig = await ctx.db.systemConfig.findUnique({ where: { key: 'TAX_RATE' } });
+      const taxRate = taxConfig ? Number(taxConfig.value) : 0.115;
+
       const { itemsData, subtotal, taxRateDecimal, taxAmount, total } = calcInvoiceTotals(
         items,
         taxRate,

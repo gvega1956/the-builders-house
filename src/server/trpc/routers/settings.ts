@@ -426,4 +426,36 @@ export const settingsRouter = createTRPCRouter({
 
       return updated;
     }),
+
+  // ── System Config ────────────────────────────────────────────────────────
+
+  getSystemConfig: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db.systemConfig.findMany();
+    return Object.fromEntries(rows.map((r) => [r.key, r.value])) as Record<string, string>;
+  }),
+
+  setSystemConfig: managerProcedure
+    .input(z.object({ key: z.string().min(1), value: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const previous = await ctx.db.systemConfig.findUnique({ where: { key: input.key } });
+
+      const updated = await ctx.db.systemConfig.upsert({
+        where: { key: input.key },
+        update: { value: input.value },
+        create: { key: input.key, value: input.value },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE',
+          entityType: 'SystemConfig',
+          entityId: input.key,
+          oldValues: { value: previous?.value ?? null } as Prisma.InputJsonValue,
+          newValues: { value: input.value } as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    }),
 });
