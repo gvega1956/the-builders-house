@@ -12,6 +12,8 @@ type CartItem = {
   locationId: string;
   name: string;
   sku: string;
+  retailPrice: number;
+  wholesalePrice: number;
   unitPrice: number;
   quantity: number;
   lineTotal: number;
@@ -28,6 +30,7 @@ export function PosClient() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerId, setCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
+  const [customerType, setCustomerType] = useState<'RETAIL' | 'WHOLESALE'>('RETAIL');
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CHECK' | 'TRANSFER' | 'CARD' | 'CREDIT'>('CASH');
   const [paymentRef, setPaymentRef] = useState('');
   const [error, setError] = useState('');
@@ -57,6 +60,9 @@ export function PosClient() {
   function addToCart(product: NonNullable<typeof productData>['products'][number]) {
     const loc = product.locations[0];
     if (!loc) { setError(`${product.sku} no tiene ubicación de stock`); return; }
+    const retail = Number(product.retailPrice);
+    const wholesale = Number(product.wholesalePrice);
+    const unitPrice = customerType === 'WHOLESALE' ? wholesale : retail;
     setCart((prev) => {
       const existing = prev.find((i) => i.productId === product.id);
       if (existing) {
@@ -66,12 +72,13 @@ export function PosClient() {
             : i
         );
       }
-      const unitPrice = Number(product.retailPrice);
       return [...prev, {
         productId: product.id,
         locationId: loc.id,
         name: product.name,
         sku: product.sku,
+        retailPrice: retail,
+        wholesalePrice: wholesale,
         unitPrice,
         quantity: 1,
         lineTotal: unitPrice,
@@ -79,6 +86,13 @@ export function PosClient() {
     });
     setSearch('');
     searchRef.current?.focus();
+  }
+
+  function applyCustomerPricing(type: 'RETAIL' | 'WHOLESALE') {
+    setCart((prev) => prev.map((i) => {
+      const unitPrice = type === 'WHOLESALE' ? i.wholesalePrice : i.retailPrice;
+      return { ...i, unitPrice, lineTotal: i.quantity * unitPrice };
+    }));
   }
 
   function updateQty(productId: string, delta: number) {
@@ -179,7 +193,12 @@ export function PosClient() {
                         <div className="text-xs font-mono" style={{ color: '#94A3B8' }}>{p.sku}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-bold" style={{ color: brand.orange[500] }}>{formatCurrency(Number(p.retailPrice))}</div>
+                        <div className="text-sm font-bold" style={{ color: brand.orange[500] }}>
+                          {formatCurrency(customerType === 'WHOLESALE' ? Number(p.wholesalePrice) : Number(p.retailPrice))}
+                        </div>
+                        {customerType === 'WHOLESALE' && (
+                          <div className="text-[10px]" style={{ color: '#1D4ED8' }}>precio mayor</div>
+                        )}
                         <div className="text-xs" style={{ color: stock > 0 ? '#16A34A' : '#DC2626' }}>{stock} en stock</div>
                       </div>
                     </button>
@@ -271,9 +290,17 @@ export function PosClient() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-sm font-semibold" style={{ color: brand.navy[950] }}>{selectedCustomer.name}</div>
-                <div className="text-xs text-slate-400">{selectedCustomer.code}</div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-xs text-slate-400">{selectedCustomer.code}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                    style={customerType === 'WHOLESALE'
+                      ? { backgroundColor: '#EFF6FF', color: '#1D4ED8' }
+                      : { backgroundColor: '#F1F5F9', color: '#475569' }}>
+                    {customerType === 'WHOLESALE' ? 'MAYORISTA' : 'RETAIL'}
+                  </span>
+                </div>
               </div>
-              <button onClick={() => { setCustomerId(''); setCustomerSearch(''); }}
+              <button onClick={() => { setCustomerId(''); setCustomerSearch(''); setCustomerType('RETAIL'); applyCustomerPricing('RETAIL'); }}
                 className="text-slate-300 hover:text-slate-500"><X size={14} /></button>
             </div>
           ) : (
@@ -292,11 +319,23 @@ export function PosClient() {
                     <div className="px-3 py-2 text-xs text-slate-400">Sin resultados</div>
                   ) : (
                     customerData.customers.map((c) => (
-                      <button key={c.id} onClick={() => { setCustomerId(c.id); setCustomerSearch(''); }}
+                      <button key={c.id} onClick={() => {
+                        const type = c.type as 'RETAIL' | 'WHOLESALE';
+                        setCustomerId(c.id);
+                        setCustomerSearch('');
+                        setCustomerType(type);
+                        applyCustomerPricing(type);
+                      }}
                         className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm"
                         style={{ borderBottom: '1px solid rgba(10,22,40,0.05)' }}>
                         <div className="font-medium" style={{ color: brand.navy[900] }}>{c.name}</div>
-                        <div className="text-xs text-slate-400">{c.code}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-400">{c.code}</span>
+                          {c.type === 'WHOLESALE' && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                              style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>MAYOR</span>
+                          )}
+                        </div>
                       </button>
                     ))
                   )}
