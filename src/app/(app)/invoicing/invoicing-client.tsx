@@ -209,6 +209,8 @@ export function InvoicingClient({ role }: { role: string }) {
   const [customerId, setCustomerId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [applyIvu, setApplyIvu] = useState(true);
+  const [paymentMode, setPaymentMode] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
+  const [creditDays, setCreditDays] = useState<number>(30);
   const [lines, setLines] = useState<LineItem[]>([
     { productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 },
   ]);
@@ -271,7 +273,7 @@ export function InvoicingClient({ role }: { role: string }) {
     setModal('none'); setSelectedId(null); setError('');
     setInvoiceType('INVOICE'); setCustomerId(''); setDueDate('');
     setLines([{ productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 }]);
-    setApplyIvu(true);
+    setApplyIvu(true); setPaymentMode('CONTADO'); setCreditDays(30);
     setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef('');
     setVoidReason(''); setAuthNotes('');
   }
@@ -332,10 +334,21 @@ export function InvoicingClient({ role }: { role: string }) {
       const missing = validLines.find((l) => !l.locationId);
       if (missing) { setError(`Selecciona la ubicación para "${missing.productName}"`); return; }
     }
+    // Compute effective dueDate
+    let computedDueDate: Date | undefined;
+    if (dueDate) {
+      computedDueDate = new Date(dueDate + 'T12:00:00');
+    } else if (paymentMode === 'CREDITO') {
+      const d = new Date();
+      d.setDate(d.getDate() + creditDays);
+      computedDueDate = d;
+    }
+
     createMutation.mutate({
       customerId,
       type: invoiceType,
       taxRate: effectiveTaxRate,
+      dueDate: computedDueDate,
       notes: notes || undefined,
       items: validLines.map((l) => ({
         productId: l.productId,
@@ -568,37 +581,107 @@ export function InvoicingClient({ role }: { role: string }) {
                     </div>
                   </div>
 
-                  {/* Customer + Due date */}
-                  <div className="grid grid-cols-2 gap-4">
+                  {/* Customer */}
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Cliente *</label>
+                    <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }}>
+                      <option value="">Seleccionar cliente...</option>
+                      {customers?.customers.map((c) => (
+                        <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                      ))}
+                    </select>
+                    {selectedCustomer && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                          style={{
+                            background: selectedCustomer.type === 'WHOLESALE' ? '#EFF6FF' : '#F0FDF4',
+                            color: selectedCustomer.type === 'WHOLESALE' ? '#1D4ED8' : '#166534',
+                          }}>
+                          {selectedCustomer.type === 'WHOLESALE' ? 'Mayorista' : 'Detallista'}
+                        </span>
+                        <span className="text-xs text-slate-400">
+                          · Precios {selectedCustomer.type === 'WHOLESALE' ? 'mayorista' : 'retail'} aplicados
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Payment mode + IVU toggle */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Condición de pago */}
                     <div>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Cliente *</label>
-                      <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }}>
-                        <option value="">Seleccionar cliente...</option>
-                        {customers?.customers.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                        ))}
-                      </select>
-                      {selectedCustomer && (
-                        <div className="mt-1.5 flex items-center gap-1.5">
-                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                      <label className="block text-xs font-semibold mb-2" style={{ color: brand.navy[700] }}>Condición de pago</label>
+                      <div className="flex rounded-xl overflow-hidden border border-slate-200">
+                        {(['CONTADO', 'CREDITO'] as const).map((m) => (
+                          <button key={m} type="button" onClick={() => setPaymentMode(m)}
+                            className="flex-1 py-2 text-xs font-semibold transition-all"
                             style={{
-                              background: selectedCustomer.type === 'WHOLESALE' ? '#EFF6FF' : '#F0FDF4',
-                              color: selectedCustomer.type === 'WHOLESALE' ? '#1D4ED8' : '#166534',
+                              background: paymentMode === m ? brand.navy[950] : 'white',
+                              color: paymentMode === m ? 'white' : brand.navy[600],
                             }}>
-                            {selectedCustomer.type === 'WHOLESALE' ? 'Mayorista' : 'Detallista'}
-                          </span>
-                          <span className="text-xs text-slate-400">
-                            · Precios {selectedCustomer.type === 'WHOLESALE' ? 'mayorista' : 'retail'} aplicados
-                          </span>
+                            {m === 'CONTADO' ? 'Al Contado' : 'A Crédito'}
+                          </button>
+                        ))}
+                      </div>
+                      {paymentMode === 'CREDITO' && (
+                        <div className="mt-2 flex gap-1.5 flex-wrap">
+                          {[15, 30, 45, 60, 90].map((d) => (
+                            <button key={d} type="button" onClick={() => setCreditDays(d)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all"
+                              style={{
+                                background: creditDays === d ? brand.orange[500] : brand.orange[50],
+                                color: creditDays === d ? 'white' : brand.orange[500],
+                              }}>
+                              {d}d
+                            </button>
+                          ))}
                         </div>
                       )}
                     </div>
+
+                    {/* IVU toggle */}
                     <div>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Fecha de vencimiento</label>
-                      <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }} />
+                      <label className="block text-xs font-semibold mb-2" style={{ color: brand.navy[700] }}>Impuesto IVU</label>
+                      <button type="button" onClick={() => setApplyIvu((v) => !v)}
+                        className="w-full flex items-center justify-between px-4 py-2 rounded-xl border transition-all"
+                        style={{
+                          background: applyIvu ? `${brand.orange[500]}12` : '#F1F5F9',
+                          borderColor: applyIvu ? brand.orange[400] : '#E2E8F0',
+                        }}>
+                        <div className="text-left">
+                          <div className="text-xs font-semibold" style={{ color: applyIvu ? brand.orange[600] : '#94A3B8' }}>
+                            {applyIvu ? `IVU ${(taxRate * 100).toFixed(1)}%` : 'Exento de IVU'}
+                          </div>
+                          <div className="text-xs" style={{ color: applyIvu ? brand.orange[500] : '#CBD5E1' }}>
+                            {applyIvu ? 'Toca para exentar' : 'Toca para aplicar'}
+                          </div>
+                        </div>
+                        {/* Toggle pill */}
+                        <span className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+                          style={{ background: applyIvu ? brand.orange[500] : '#CBD5E1' }}>
+                          <span className="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
+                            style={{ transform: applyIvu ? 'translateX(18px)' : 'translateX(2px)' }} />
+                        </span>
+                      </button>
                     </div>
+                  </div>
+
+                  {/* Due date (manual override or shown when CREDITO) */}
+                  <div>
+                    <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                      Fecha de vencimiento
+                      {paymentMode === 'CREDITO' && !dueDate && (
+                        <span className="ml-2 font-normal text-slate-400">
+                          (calculada: {creditDays} días desde hoy)
+                        </span>
+                      )}
+                    </label>
+                    <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }} />
+                    {paymentMode === 'CONTADO' && !dueDate && (
+                      <p className="text-xs text-slate-400 mt-1">Al contado — sin fecha de vencimiento</p>
+                    )}
                   </div>
 
                   {/* Line items */}
@@ -709,33 +792,22 @@ export function InvoicingClient({ role }: { role: string }) {
                     <div className="flex justify-between text-sm text-slate-500">
                       <span>Subtotal</span><span className="font-medium">{formatCurrency(subtotal)}</span>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <button
-                        type="button"
-                        onClick={() => setApplyIvu((v) => !v)}
-                        className="flex items-center gap-2 group"
-                      >
-                        {/* Toggle pill */}
-                        <span
-                          className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-                          style={{ background: applyIvu ? brand.orange[500] : '#CBD5E1' }}
-                        >
-                          <span
-                            className="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-                            style={{ transform: applyIvu ? 'translateX(18px)' : 'translateX(2px)' }}
-                          />
-                        </span>
-                        <span className="text-sm" style={{ color: applyIvu ? '#64748B' : '#94A3B8' }}>
-                          IVU ({(taxRate * 100).toFixed(1)}%)
-                        </span>
-                      </button>
-                      <span className="font-medium" style={{ color: applyIvu ? '#64748B' : '#94A3B8' }}>
-                        {applyIvu ? formatCurrency(taxAmount) : 'Exento'}
-                      </span>
+                    <div className="flex justify-between text-sm" style={{ color: applyIvu ? '#64748B' : '#94A3B8' }}>
+                      <span>IVU ({(taxRate * 100).toFixed(1)}%)</span>
+                      <span className="font-medium">{applyIvu ? formatCurrency(taxAmount) : 'Exento'}</span>
                     </div>
                     <div className="flex justify-between text-base font-bold pt-2 border-t border-slate-200" style={{ color: brand.navy[950] }}>
                       <span>Total</span><span>{formatCurrency(totalAmount)}</span>
                     </div>
+                    {paymentMode === 'CREDITO' && (
+                      <div className="flex justify-between text-xs pt-1" style={{ color: '#0284C7' }}>
+                        <span>Crédito {creditDays} días</span>
+                        <span>{dueDate
+                          ? new Date(dueDate + 'T12:00:00').toLocaleDateString('es-PR')
+                          : (() => { const d = new Date(); d.setDate(d.getDate() + creditDays); return d.toLocaleDateString('es-PR'); })()
+                        }</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Notes */}
