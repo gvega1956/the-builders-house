@@ -208,6 +208,7 @@ export function InvoicingClient({ role }: { role: string }) {
   const [invoiceType, setInvoiceType] = useState<InvoiceType>('INVOICE');
   const [customerId, setCustomerId] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [applyIvu, setApplyIvu] = useState(true);
   const [lines, setLines] = useState<LineItem[]>([
     { productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 },
   ]);
@@ -270,6 +271,7 @@ export function InvoicingClient({ role }: { role: string }) {
     setModal('none'); setSelectedId(null); setError('');
     setInvoiceType('INVOICE'); setCustomerId(''); setDueDate('');
     setLines([{ productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 }]);
+    setApplyIvu(true);
     setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef('');
     setVoidReason(''); setAuthNotes('');
   }
@@ -317,7 +319,8 @@ export function InvoicingClient({ role }: { role: string }) {
   }
 
   const subtotal = lines.reduce((s, l) => s + calcLine(l), 0);
-  const taxAmount = subtotal * taxRate;
+  const effectiveTaxRate = applyIvu ? taxRate : 0;
+  const taxAmount = subtotal * effectiveTaxRate;
   const totalAmount = subtotal + taxAmount;
 
   function submitCreate() {
@@ -332,7 +335,7 @@ export function InvoicingClient({ role }: { role: string }) {
     createMutation.mutate({
       customerId,
       type: invoiceType,
-      taxRate,
+      taxRate: effectiveTaxRate,
       notes: notes || undefined,
       items: validLines.map((l) => ({
         productId: l.productId,
@@ -706,8 +709,29 @@ export function InvoicingClient({ role }: { role: string }) {
                     <div className="flex justify-between text-sm text-slate-500">
                       <span>Subtotal</span><span className="font-medium">{formatCurrency(subtotal)}</span>
                     </div>
-                    <div className="flex justify-between text-sm text-slate-500">
-                      <span>IVU ({(taxRate * 100).toFixed(1)}%)</span><span className="font-medium">{formatCurrency(taxAmount)}</span>
+                    <div className="flex items-center justify-between text-sm">
+                      <button
+                        type="button"
+                        onClick={() => setApplyIvu((v) => !v)}
+                        className="flex items-center gap-2 group"
+                      >
+                        {/* Toggle pill */}
+                        <span
+                          className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
+                          style={{ background: applyIvu ? brand.orange[500] : '#CBD5E1' }}
+                        >
+                          <span
+                            className="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
+                            style={{ transform: applyIvu ? 'translateX(18px)' : 'translateX(2px)' }}
+                          />
+                        </span>
+                        <span className="text-sm" style={{ color: applyIvu ? '#64748B' : '#94A3B8' }}>
+                          IVU ({(taxRate * 100).toFixed(1)}%)
+                        </span>
+                      </button>
+                      <span className="font-medium" style={{ color: applyIvu ? '#64748B' : '#94A3B8' }}>
+                        {applyIvu ? formatCurrency(taxAmount) : 'Exento'}
+                      </span>
                     </div>
                     <div className="flex justify-between text-base font-bold pt-2 border-t border-slate-200" style={{ color: brand.navy[950] }}>
                       <span>Total</span><span>{formatCurrency(totalAmount)}</span>
@@ -759,7 +783,7 @@ export function InvoicingClient({ role }: { role: string }) {
                   dueDate={dueDate}
                   lines={lines}
                   notes={notes}
-                  taxRate={taxRate}
+                  taxRate={effectiveTaxRate}
                 />
               </div>
             </div>
