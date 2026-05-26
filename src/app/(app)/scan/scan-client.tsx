@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
@@ -67,6 +68,28 @@ export function ScanClient() {
   const [showBulkDropdown, setShowBulkDropdown] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkResult, setBulkResult] = useState<MovementResult | null>(null);
+
+  // Dropdown portal positioning (backdrop-filter creates stacking context, portals escape it)
+  const individualInputRef = useRef<HTMLDivElement>(null);
+  const bulkInputRef = useRef<HTMLDivElement>(null);
+  const [individualPos, setIndividualPos] = useState({ top: 0, left: 0, width: 0 });
+  const [bulkPos, setBulkPos] = useState({ top: 0, left: 0, width: 0 });
+
+  function openIndividualDropdown() {
+    if (individualInputRef.current) {
+      const r = individualInputRef.current.getBoundingClientRect();
+      setIndividualPos({ top: r.bottom + 4, left: r.left, width: r.width });
+    }
+    setShowDropdown(true);
+  }
+
+  function openBulkDropdown() {
+    if (bulkInputRef.current) {
+      const r = bulkInputRef.current.getBoundingClientRect();
+      setBulkPos({ top: r.bottom + 4, left: r.left, width: r.width });
+    }
+    setShowBulkDropdown(true);
+  }
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(configSearch), 350);
@@ -519,69 +542,72 @@ export function ScanClient() {
                 <h3 className="font-bold text-sm mb-3" style={{ color: brand.navy[950] }}>
                   1. Seleccionar Producto
                 </h3>
-                <div className="relative">
-                  <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 cursor-text"
-                    onClick={() => setShowDropdown(true)}>
-                    <Search size={15} style={{ color: '#94A3B8' }} />
-                    <input
-                      value={configSearch}
-                      onChange={(e) => { setConfigSearch(e.target.value); setShowDropdown(true); }}
-                      onFocus={() => setShowDropdown(true)}
-                      onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-                      placeholder="Seleccionar producto del inventario..."
-                      className="flex-1 text-sm bg-transparent outline-none"
-                      style={{ color: brand.navy[950] }}
-                    />
-                    {configSearch
-                      ? <button onMouseDown={(e) => { e.preventDefault(); setConfigSearch(''); setDebouncedSearch(''); setSelectedProductId(null); setBarcodeInput(''); setShowDropdown(false); }}><X size={14} className="text-slate-400" /></button>
-                      : <ChevronDown size={14} className="text-slate-400 shrink-0" />
-                    }
-                  </div>
-
-                  {showDropdown && (
-                    <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-64 overflow-y-auto">
-                      {!productList ? (
-                        <div className="px-4 py-3 text-sm text-slate-400">Cargando productos...</div>
-                      ) : productList.products.length === 0 ? (
-                        <div className="px-4 py-3 text-sm text-slate-400">Sin resultados</div>
-                      ) : (
-                        <>
-                          {!debouncedSearch && (
-                            <div className="px-4 py-2 text-xs text-slate-400 border-b border-slate-100">
-                              {productList.total} productos — escribe para filtrar
-                            </div>
-                          )}
-                          {productList.products.map((p) => (
-                            <button key={p.id}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setSelectedProductId(p.id);
-                                setConfigSearch(p.name);
-                                setShowDropdown(false);
-                                setBarcodeInput(p.barcode ?? p.sku);
-                                setConfigResult(null);
-                              }}
-                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
-                              style={selectedProductId === p.id ? { backgroundColor: brand.orange[50] } : {}}>
-                              <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                                style={{ backgroundColor: brand.orange[100] }}>
-                                <Package size={11} style={{ color: brand.orange[500] }} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm font-medium truncate" style={{ color: brand.navy[950] }}>{p.name}</div>
-                                <div className="text-xs font-mono" style={{ color: '#94A3B8' }}>{p.sku}</div>
-                              </div>
-                              <span className="shrink-0 text-xs px-2 py-0.5 rounded-full"
-                                style={p.barcode ? { backgroundColor: '#DCFCE7', color: '#166534' } : { backgroundColor: '#FEF3C7', color: '#92400E' }}>
-                                {p.barcode ? 'Asignado' : 'Sin código'}
-                              </span>
-                            </button>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                  )}
+                <div
+                  ref={individualInputRef}
+                  className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 cursor-text"
+                  onClick={openIndividualDropdown}>
+                  <Search size={15} style={{ color: '#94A3B8' }} />
+                  <input
+                    value={configSearch}
+                    onChange={(e) => { setConfigSearch(e.target.value); openIndividualDropdown(); }}
+                    onFocus={openIndividualDropdown}
+                    onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
+                    placeholder="Seleccionar producto del inventario..."
+                    className="flex-1 text-sm bg-transparent outline-none"
+                    style={{ color: brand.navy[950] }}
+                  />
+                  {configSearch
+                    ? <button onMouseDown={(e) => { e.preventDefault(); setConfigSearch(''); setDebouncedSearch(''); setSelectedProductId(null); setBarcodeInput(''); setShowDropdown(false); }}><X size={14} className="text-slate-400" /></button>
+                    : <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                  }
                 </div>
+
+                {showDropdown && typeof document !== 'undefined' && createPortal(
+                  <div
+                    style={{ position: 'fixed', top: individualPos.top, left: individualPos.left, width: individualPos.width, zIndex: 9999 }}
+                    className="bg-white border border-slate-200 rounded-xl shadow-2xl max-h-64 overflow-y-auto">
+                    {!productList ? (
+                      <div className="px-4 py-3 text-sm text-slate-400">Cargando productos...</div>
+                    ) : productList.products.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-slate-400">Sin resultados</div>
+                    ) : (
+                      <>
+                        {!debouncedSearch && (
+                          <div className="px-4 py-2 text-xs text-slate-400 border-b border-slate-100">
+                            {productList.total} productos — escribe para filtrar
+                          </div>
+                        )}
+                        {productList.products.map((p) => (
+                          <button key={p.id}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setSelectedProductId(p.id);
+                              setConfigSearch(p.name);
+                              setShowDropdown(false);
+                              setBarcodeInput(p.barcode ?? p.sku);
+                              setConfigResult(null);
+                            }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0"
+                            style={selectedProductId === p.id ? { backgroundColor: brand.orange[50] } : {}}>
+                            <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                              style={{ backgroundColor: brand.orange[100] }}>
+                              <Package size={11} style={{ color: brand.orange[500] }} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate" style={{ color: brand.navy[950] }}>{p.name}</div>
+                              <div className="text-xs font-mono" style={{ color: '#94A3B8' }}>{p.sku}</div>
+                            </div>
+                            <span className="shrink-0 text-xs px-2 py-0.5 rounded-full"
+                              style={p.barcode ? { backgroundColor: '#DCFCE7', color: '#166534' } : { backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                              {p.barcode ? 'Asignado' : 'Sin código'}
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>,
+                  document.body
+                )}
               </div>
 
               {/* Step 2: Configure barcode */}
@@ -708,62 +734,65 @@ export function ScanClient() {
                 <h3 className="font-bold text-sm mb-3" style={{ color: brand.navy[950] }}>
                   Agregar productos al lote
                 </h3>
-                <div className="relative">
-                  <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 cursor-text"
-                    onClick={() => setShowBulkDropdown(true)}>
-                    <Search size={15} style={{ color: '#94A3B8' }} />
-                    <input
-                      value={bulkSearch}
-                      onChange={(e) => { setBulkSearch(e.target.value); setShowBulkDropdown(true); }}
-                      onFocus={() => setShowBulkDropdown(true)}
-                      onBlur={() => setTimeout(() => setShowBulkDropdown(false), 200)}
-                      placeholder="Buscar producto para agregar al lote..."
-                      className="flex-1 text-sm bg-transparent outline-none"
-                      style={{ color: brand.navy[950] }}
-                    />
-                    <ChevronDown size={14} className="text-slate-400 shrink-0" />
-                  </div>
-
-                  {showBulkDropdown && (
-                    <div className="absolute top-full left-0 right-0 z-30 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
-                      {!bulkSearchResults ? (
-                        <div className="px-4 py-3 text-sm text-slate-400">Cargando productos...</div>
-                      ) : bulkSearchResults.products.length === 0 ? (
-                        <div className="px-4 py-3 text-sm text-slate-400">Sin resultados</div>
-                      ) : (
-                        <>
-                          {!bulkDebouncedSearch && (
-                            <div className="px-4 py-2 text-xs text-slate-400 border-b border-slate-100">
-                              {bulkSearchResults.total} productos — escribe para filtrar
-                            </div>
-                          )}
-                          {bulkSearchResults.products.map((p) => {
-                            const already = bulkItems.some(i => i.productId === p.id);
-                            return (
-                              <button key={p.id}
-                                onMouseDown={(e) => { e.preventDefault(); if (!already) addToBatch(p); }}
-                                disabled={already}
-                                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0 disabled:opacity-40">
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-medium truncate" style={{ color: brand.navy[950] }}>{p.name}</div>
-                                  <div className="text-xs font-mono" style={{ color: '#94A3B8' }}>{p.sku}</div>
-                                </div>
-                                <span className="shrink-0 text-xs px-2 py-0.5 rounded-full"
-                                  style={already
-                                    ? { backgroundColor: '#F1F5F9', color: '#94A3B8' }
-                                    : p.barcode
-                                      ? { backgroundColor: '#DCFCE7', color: '#166534' }
-                                      : { backgroundColor: '#FEF3C7', color: '#92400E' }}>
-                                  {already ? 'Agregado' : p.barcode ? 'Con código' : 'Sin código'}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </>
-                      )}
-                    </div>
-                  )}
+                <div
+                  ref={bulkInputRef}
+                  className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 cursor-text"
+                  onClick={openBulkDropdown}>
+                  <Search size={15} style={{ color: '#94A3B8' }} />
+                  <input
+                    value={bulkSearch}
+                    onChange={(e) => { setBulkSearch(e.target.value); openBulkDropdown(); }}
+                    onFocus={openBulkDropdown}
+                    onBlur={() => setTimeout(() => setShowBulkDropdown(false), 200)}
+                    placeholder="Buscar producto para agregar al lote..."
+                    className="flex-1 text-sm bg-transparent outline-none"
+                    style={{ color: brand.navy[950] }}
+                  />
+                  <ChevronDown size={14} className="text-slate-400 shrink-0" />
                 </div>
+
+                {showBulkDropdown && typeof document !== 'undefined' && createPortal(
+                  <div
+                    style={{ position: 'fixed', top: bulkPos.top, left: bulkPos.left, width: bulkPos.width, zIndex: 9999 }}
+                    className="bg-white border border-slate-200 rounded-xl shadow-2xl max-h-56 overflow-y-auto">
+                    {!bulkSearchResults ? (
+                      <div className="px-4 py-3 text-sm text-slate-400">Cargando productos...</div>
+                    ) : bulkSearchResults.products.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-slate-400">Sin resultados</div>
+                    ) : (
+                      <>
+                        {!bulkDebouncedSearch && (
+                          <div className="px-4 py-2 text-xs text-slate-400 border-b border-slate-100">
+                            {bulkSearchResults.total} productos — escribe para filtrar
+                          </div>
+                        )}
+                        {bulkSearchResults.products.map((p) => {
+                          const already = bulkItems.some(i => i.productId === p.id);
+                          return (
+                            <button key={p.id}
+                              onMouseDown={(e) => { e.preventDefault(); if (!already) addToBatch(p); }}
+                              disabled={already}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 text-left border-b border-slate-50 last:border-0 disabled:opacity-40">
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate" style={{ color: brand.navy[950] }}>{p.name}</div>
+                                <div className="text-xs font-mono" style={{ color: '#94A3B8' }}>{p.sku}</div>
+                              </div>
+                              <span className="shrink-0 text-xs px-2 py-0.5 rounded-full"
+                                style={already
+                                  ? { backgroundColor: '#F1F5F9', color: '#94A3B8' }
+                                  : p.barcode
+                                    ? { backgroundColor: '#DCFCE7', color: '#166534' }
+                                    : { backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                                {already ? 'Agregado' : p.barcode ? 'Con código' : 'Sin código'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    )}
+                  </div>,
+                  document.body
+                )}
               </div>
 
               {/* Batch table */}
