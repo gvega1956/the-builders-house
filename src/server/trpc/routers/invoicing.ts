@@ -1227,6 +1227,80 @@ export const invoicingRouter = createTRPCRouter({
       });
     }),
 
+  // ─── Update (DRAFT or QUOTE only) ────────────────────────────────────────
+
+  update: managerProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        customerId: z.string().cuid(),
+        taxRate: z.number().min(0).max(1),
+        dueDate: z.date().optional(),
+        notes: z.string().optional(),
+        items: z.array(invoiceItemSchema).min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await ctx.db.invoice.findUnique({ where: { id: input.id } });
+      if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      if (invoice.status !== 'DRAFT' && invoice.type !== 'QUOTE') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Solo se pueden editar borradores o cotizaciones.',
+        });
+      }
+
+      const { itemsData, subtotal, taxRateDecimal, taxAmount, total } = calcInvoiceTotals(
+        input.items,
+        input.taxRate,
+      );
+
+      await ctx.db.$transaction(async (tx) => {
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: input.id } });
+
+        for (const [i, item] of itemsData.entries()) {
+          await tx.invoiceItem.create({
+            data: {
+              invoiceId: input.id,
+              productId: item.productId,
+              locationId: input.items[i]!.locationId ?? null,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+              discountPercent: item.discountPercent,
+              lineTotal: item.lineTotal,
+            },
+          });
+        }
+
+        await tx.invoice.update({
+          where: { id: input.id },
+          data: {
+            customerId: input.customerId,
+            subtotal,
+            taxRate: taxRateDecimal,
+            taxAmount,
+            total,
+            dueDate: input.dueDate ?? null,
+            notes: input.notes ?? null,
+          },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'UPDATE',
+            entityType: 'Invoice',
+            entityId: input.id,
+            oldValues: { invoiceNumber: invoice.invoiceNumber, total: invoice.total.toString() } as Prisma.InputJsonValue,
+            newValues: { itemCount: input.items.length, total: total.toString() } as Prisma.InputJsonValue,
+          },
+        });
+      });
+
+      return { id: input.id };
+    }),
+
   // ─── Cuentas por Cobrar ───────────────────────────────────────────────────
 
   arSummary: protectedProcedure.query(async ({ ctx }) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -9,7 +9,7 @@ import {
   Plus, Search, Receipt, X, ChevronLeft, ChevronRight,
   Eye, Trash2, DollarSign, ShieldCheck, Printer,
   Building2, AlertCircle, CheckCircle2,
-  FileText, TrendingUp, Clock, AlertTriangle,
+  FileText, TrendingUp, Clock, AlertTriangle, Pencil,
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -208,8 +208,9 @@ export function InvoicingClient({ role }: { role: string }) {
   const [arCustomerId, setArCustomerId] = useState('');
 
   // Modal state
-  const [modal, setModal] = useState<'none' | 'create' | 'detail' | 'payment' | 'void' | 'authorize'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'detail' | 'payment' | 'void' | 'authorize'>('none');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   // Create form
@@ -280,13 +281,45 @@ export function InvoicingClient({ role }: { role: string }) {
     onError: (e) => setError(e.message),
   });
 
+  const { data: editInvoiceData } = trpc.invoicing.byId.useQuery(
+    editInvoiceId ?? '',
+    { enabled: !!editInvoiceId && modal === 'edit' },
+  );
+
+  const updateMutation = trpc.invoicing.update.useMutation({
+    onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
+  useEffect(() => {
+    if (!editInvoiceData || modal !== 'edit') return;
+    const inv = editInvoiceData;
+    setCustomerId(inv.customerId);
+    setInvoiceType(inv.type as InvoiceType);
+    setDueDate(inv.dueDate ? new Date(inv.dueDate).toISOString().split('T')[0]! : '');
+    setApplyIvu(Number(inv.taxRate) > 0);
+    setNotes(inv.notes ?? '');
+    setLines(
+      inv.items.map((item) => ({
+        productId: item.productId,
+        productName: item.product.name,
+        productSku: (item.product as { name: string; sku?: string }).sku ?? '',
+        quantity: String(item.quantity),
+        unitPrice: String(Number(item.unitPrice)),
+        discountPercent: String(Number(item.discountPercent)),
+        locationId: (item as unknown as { locationId?: string }).locationId ?? '',
+        availableStock: 0,
+      })),
+    );
+  }, [editInvoiceData, modal]);
+
   const selectedCustomer = useMemo(
     () => customers?.customers.find((c) => c.id === customerId),
     [customers, customerId],
   );
 
   function closeModal() {
-    setModal('none'); setSelectedId(null); setError('');
+    setModal('none'); setSelectedId(null); setEditInvoiceId(null); setError('');
     setInvoiceType('INVOICE'); setCustomerId(''); setDueDate('');
     setLines([{ productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 }]);
     setApplyIvu(true); setPaymentMode('CONTADO'); setCreditDays(30);
@@ -360,20 +393,33 @@ export function InvoicingClient({ role }: { role: string }) {
       computedDueDate = d;
     }
 
-    createMutation.mutate({
-      customerId,
-      type: invoiceType,
-      taxRate: effectiveTaxRate,
-      dueDate: computedDueDate,
-      notes: notes || undefined,
-      items: validLines.map((l) => ({
-        productId: l.productId,
-        locationId: l.locationId || undefined,
-        quantity: parseInt(l.quantity),
-        unitPrice: parseFloat(l.unitPrice),
-        discountPercent: parseFloat(l.discountPercent) || 0,
-      })),
-    });
+    const itemsPayload = validLines.map((l) => ({
+      productId: l.productId,
+      locationId: l.locationId || undefined,
+      quantity: parseInt(l.quantity),
+      unitPrice: parseFloat(l.unitPrice),
+      discountPercent: parseFloat(l.discountPercent) || 0,
+    }));
+
+    if (modal === 'edit' && editInvoiceId) {
+      updateMutation.mutate({
+        id: editInvoiceId,
+        customerId,
+        taxRate: effectiveTaxRate,
+        dueDate: computedDueDate,
+        notes: notes || undefined,
+        items: itemsPayload,
+      });
+    } else {
+      createMutation.mutate({
+        customerId,
+        type: invoiceType,
+        taxRate: effectiveTaxRate,
+        dueDate: computedDueDate,
+        notes: notes || undefined,
+        items: itemsPayload,
+      });
+    }
   }
 
   function submitPayment() {
@@ -731,6 +777,13 @@ export function InvoicingClient({ role }: { role: string }) {
                             className="p-1.5 rounded-lg hover:bg-slate-100" title="Ver detalle">
                             <Eye size={14} style={{ color: brand.navy[600] }} />
                           </button>
+                          {(inv.status === 'DRAFT' || (inv as unknown as { type: string }).type === 'QUOTE') && (
+                            <button
+                              onClick={() => { setEditInvoiceId(inv.id); setModal('edit'); }}
+                              className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar">
+                              <Pencil size={14} style={{ color: '#2563EB' }} />
+                            </button>
+                          )}
                           {(inv.status === 'ISSUED' || inv.status === 'PARTIAL') && (
                             <button onClick={() => { setSelectedId(inv.id); setModal('payment'); setPayAmount(''); }}
                               className="p-1.5 rounded-lg hover:bg-green-50" title="Registrar pago">
@@ -780,7 +833,7 @@ export function InvoicingClient({ role }: { role: string }) {
       {/* ══════════════════════════════════════════════════════════
           CREATE MODAL — Full-screen split panel
       ══════════════════════════════════════════════════════════ */}
-      {modal === 'create' && (
+      {(modal === 'create' || modal === 'edit') && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" style={{ backdropFilter: 'blur(6px)' }} onClick={closeModal} />
           <div className="relative w-full max-w-6xl rounded-2xl overflow-hidden flex flex-col"
@@ -793,7 +846,7 @@ export function InvoicingClient({ role }: { role: string }) {
                   <Receipt size={15} className="text-white" />
                 </div>
                 <div>
-                  <div className="text-base font-bold text-white">Nuevo Documento</div>
+                  <div className="text-base font-bold text-white">{modal === 'edit' ? 'Editar Documento' : 'Nuevo Documento'}</div>
                   <div className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>The Builder&apos;s House · Puerto Rico</div>
                 </div>
               </div>
@@ -815,9 +868,17 @@ export function InvoicingClient({ role }: { role: string }) {
                     </div>
                   )}
 
-                  {/* Document type */}
+                  {/* Document type — read-only when editing */}
                   <div>
                     <label className="block text-xs font-semibold mb-2" style={{ color: brand.navy[700] }}>Tipo de documento</label>
+                    {modal === 'edit' ? (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50">
+                        {(() => { const cfg = TYPE_CFG[invoiceType]; return (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold" style={{ background: cfg.color + '20', color: cfg.color }}>{cfg.label}</span>
+                        ); })()}
+                        <span className="text-xs text-slate-400">No se puede cambiar el tipo al editar</span>
+                      </div>
+                    ) : (
                     <div className="flex gap-2">
                       {(Object.entries(TYPE_CFG) as [InvoiceType, typeof TYPE_CFG[InvoiceType]][]).map(([type, cfg]) => (
                         <button key={type} onClick={() => setInvoiceType(type)}
@@ -831,6 +892,7 @@ export function InvoicingClient({ role }: { role: string }) {
                         </button>
                       ))}
                     </div>
+                    )}
                   </div>
 
                   {/* Customer */}
@@ -1080,13 +1142,16 @@ export function InvoicingClient({ role }: { role: string }) {
                     Cancelar
                   </button>
                   <div className="flex-1" />
-                  <button onClick={submitCreate} disabled={createMutation.isPending}
+                  <button onClick={submitCreate}
+                    disabled={modal === 'edit' ? updateMutation.isPending : createMutation.isPending}
                     className="px-6 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60 hover:opacity-90 transition-opacity"
                     style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
-                    {createMutation.isPending ? 'Emitiendo...' :
-                      invoiceType === 'QUOTE' ? 'Emitir Cotización' :
-                      invoiceType === 'CREDIT_NOTE' ? 'Emitir Nota de Crédito' :
-                      'Emitir Factura'}
+                    {modal === 'edit'
+                      ? (updateMutation.isPending ? 'Guardando...' : 'Guardar Cambios')
+                      : (createMutation.isPending ? 'Emitiendo...' :
+                          invoiceType === 'QUOTE' ? 'Emitir Cotización' :
+                          invoiceType === 'CREDIT_NOTE' ? 'Emitir Nota de Crédito' :
+                          'Emitir Factura')}
                   </button>
                 </div>
               </div>
