@@ -119,6 +119,63 @@ export const productsRouter = createTRPCRouter({
       return product;
     }),
 
+  // Lookup by SKU or barcode — used by the scan module
+  scan: protectedProcedure
+    .input(z.string().min(1))
+    .query(async ({ ctx, input }) => {
+      const product = await ctx.db.product.findFirst({
+        where: {
+          isActive: true,
+          OR: [{ sku: input }, { barcode: input }],
+        },
+        include: {
+          category: true,
+          locations: { include: { warehouse: true } },
+        },
+      });
+      if (!product) throw new TRPCError({ code: 'NOT_FOUND' });
+      return product;
+    }),
+
+  // Assign barcode + qrCode to a product (both set to the same value)
+  setBarcode: managerProcedure
+    .input(
+      z.object({
+        productId: z.string().cuid(),
+        barcode: z.string().min(1).max(100),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const conflict = await ctx.db.product.findFirst({
+        where: { barcode: input.barcode, id: { not: input.productId } },
+        select: { sku: true, name: true },
+      });
+      if (conflict) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `Código ya asignado a: ${conflict.sku} — ${conflict.name}`,
+        });
+      }
+
+      const updated = await ctx.db.product.update({
+        where: { id: input.productId },
+        data: { barcode: input.barcode, qrCode: input.barcode },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE',
+          entityType: 'Product',
+          entityId: input.productId,
+          newValues: { barcode: input.barcode } as Prisma.InputJsonValue,
+          ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+        },
+      });
+
+      return updated;
+    }),
+
   create: protectedProcedure
     .input(productCreateSchema)
     .mutation(async ({ ctx, input }) => {
