@@ -9,6 +9,7 @@ import {
   Plus, Search, Receipt, X, ChevronLeft, ChevronRight,
   Eye, Trash2, DollarSign, ShieldCheck, Printer,
   Building2, AlertCircle, CheckCircle2,
+  FileText, TrendingUp, Clock, AlertTriangle,
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -193,11 +194,18 @@ function InvoicePreview({
 export function InvoicingClient({ role }: { role: string }) {
   const canAuthorize = role === 'ADMIN' || role === 'MANAGER';
 
+  // Tab
+  const [activeTab, setActiveTab] = useState<'invoices' | 'ar'>('invoices');
+
   // List state
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [page, setPage] = useState(1);
+
+  // AR filters
+  const [arSearch, setArSearch] = useState('');
+  const [arCustomerId, setArCustomerId] = useState('');
 
   // Modal state
   const [modal, setModal] = useState<'none' | 'create' | 'detail' | 'payment' | 'void' | 'authorize'>('none');
@@ -243,6 +251,14 @@ export function InvoicingClient({ role }: { role: string }) {
   const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });
   const { data: warehouses } = trpc.settings.warehouses.useQuery();
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
+
+  // AR queries (only fetch when on AR tab)
+  const { data: arSummary } = trpc.invoicing.arSummary.useQuery(undefined, { enabled: activeTab === 'ar' });
+  const { data: arOpenInvoices } = trpc.invoicing.arOpenInvoices.useQuery(
+    { customerId: arCustomerId || undefined, search: arSearch || undefined },
+    { enabled: activeTab === 'ar' },
+  );
+  const { data: arAging } = trpc.invoicing.arAging.useQuery(undefined, { enabled: activeTab === 'ar' });
 
   const taxRate = sysConfig?.ivu_rate ? parseFloat(sysConfig.ivu_rate) : 0.115;
 
@@ -397,6 +413,241 @@ export function InvoicingClient({ role }: { role: string }) {
         </button>
       </div>
 
+      {/* ── Tab strip ── */}
+      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: 'rgba(10,22,40,0.06)' }}>
+        {([
+          { key: 'invoices', label: 'Facturas', icon: FileText },
+          { key: 'ar',       label: 'Cuentas por Cobrar', icon: TrendingUp },
+        ] as const).map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={() => setActiveTab(key)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+            style={{
+              background: activeTab === key ? 'white' : 'transparent',
+              color: activeTab === key ? brand.navy[950] : '#64748B',
+              boxShadow: activeTab === key ? '0 1px 4px rgba(10,22,40,0.12)' : 'none',
+            }}>
+            <Icon size={14} /> {label}
+            {key === 'ar' && arSummary && arSummary.overdueCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-xs font-bold text-white"
+                style={{ background: '#DC2626' }}>
+                {arSummary.overdueCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════
+          CUENTAS POR COBRAR TAB
+      ══════════════════════════════════════════════════════════ */}
+      {activeTab === 'ar' && (
+        <div className="space-y-5">
+          {/* KPI Cards */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              {
+                label: 'Total por Cobrar',
+                value: formatCurrency(arSummary?.totalOwed ?? 0),
+                sub: `${arSummary?.openCount ?? 0} facturas abiertas`,
+                icon: DollarSign,
+                color: brand.navy[950],
+                bg: `${brand.navy[950]}08`,
+                border: `${brand.navy[950]}15`,
+              },
+              {
+                label: 'Vencido',
+                value: formatCurrency(arSummary?.totalOverdue ?? 0),
+                sub: `${arSummary?.overdueCount ?? 0} facturas vencidas`,
+                icon: AlertTriangle,
+                color: '#DC2626',
+                bg: '#FEF2F2',
+                border: '#FECACA',
+              },
+              {
+                label: 'Vence en 7 días',
+                value: formatCurrency(arSummary?.dueSoon ?? 0),
+                sub: `${arSummary?.dueSoonCount ?? 0} facturas próximas`,
+                icon: Clock,
+                color: '#D97706',
+                bg: '#FFFBEB',
+                border: '#FDE68A',
+              },
+            ].map((card) => (
+              <div key={card.label} className="rounded-2xl p-4"
+                style={{ background: card.bg, border: `1px solid ${card.border}` }}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: card.color }}>{card.label}</span>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: card.color + '18' }}>
+                    <card.icon size={14} style={{ color: card.color }} />
+                  </div>
+                </div>
+                <div className="text-2xl font-bold" style={{ color: card.color }}>{card.value}</div>
+                <div className="text-xs mt-0.5" style={{ color: card.color + 'AA' }}>{card.sub}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Aging table */}
+          {arAging && arAging.length > 0 && (
+            <div style={glass} className="rounded-2xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-sm font-semibold" style={{ color: brand.navy[950] }}>Envejecimiento de Deuda por Cliente</h3>
+                <span className="text-xs text-slate-400">Aging report</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                      {['Cliente', 'Corriente', '1-30 días', '31-60 días', '61-90 días', '+90 días', 'Total'].map((h, idx) => (
+                        <th key={h} className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide ${idx === 0 ? 'text-left' : 'text-right'}`}
+                          style={{
+                            color: idx === 0 ? '#94A3B8' :
+                                   idx === 2 ? '#D97706' :
+                                   idx === 3 ? '#EA580C' :
+                                   idx >= 4 ? '#DC2626' : '#94A3B8',
+                          }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {arAging.map((row, i) => (
+                      <tr key={row.customerId}
+                        style={{ borderBottom: i < arAging.length - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none' }}
+                        className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3">
+                          <div className="font-medium" style={{ color: brand.navy[950] }}>{row.customerName}</div>
+                          <div className="text-xs text-slate-400">{row.customerCode}</div>
+                        </td>
+                        <td className="px-4 py-3 text-right text-slate-600">{formatCurrency(row.current)}</td>
+                        <td className="px-4 py-3 text-right font-medium" style={{ color: row.d30 > 0 ? '#D97706' : '#94A3B8' }}>
+                          {formatCurrency(row.d30)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium" style={{ color: row.d60 > 0 ? '#EA580C' : '#94A3B8' }}>
+                          {formatCurrency(row.d60)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-medium" style={{ color: row.d90 > 0 ? '#DC2626' : '#94A3B8' }}>
+                          {formatCurrency(row.d90)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold" style={{ color: row.d90plus > 0 ? '#991B1B' : '#94A3B8' }}>
+                          {formatCurrency(row.d90plus)}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold" style={{ color: brand.navy[950] }}>
+                          {formatCurrency(row.total)}
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Totals row */}
+                    <tr style={{ borderTop: '2px solid rgba(10,22,40,0.1)', background: 'rgba(10,22,40,0.03)' }}>
+                      <td className="px-4 py-3 text-xs font-bold uppercase tracking-wide" style={{ color: brand.navy[700] }}>TOTAL</td>
+                      {(['current', 'd30', 'd60', 'd90', 'd90plus', 'total'] as const).map((k) => (
+                        <td key={k} className="px-4 py-3 text-right font-bold text-sm" style={{ color: brand.navy[950] }}>
+                          {formatCurrency(arAging.reduce((s, r) => s + r[k], 0))}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Open invoices list */}
+          <div style={glass} className="rounded-2xl overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
+              <h3 className="text-sm font-semibold" style={{ color: brand.navy[950] }}>Facturas Pendientes de Cobro</h3>
+              <div className="flex-1 flex gap-2 justify-end flex-wrap">
+                <div className="flex items-center gap-2 bg-white/80 rounded-xl px-3 py-1.5 border border-white/80">
+                  <Search size={13} style={{ color: '#94A3B8' }} />
+                  <input value={arSearch} onChange={(e) => setArSearch(e.target.value)}
+                    placeholder="Buscar..." className="w-32 text-xs bg-transparent outline-none" style={{ color: brand.navy[950] }} />
+                </div>
+                <select value={arCustomerId} onChange={(e) => setArCustomerId(e.target.value)}
+                  className="text-xs px-3 py-1.5 rounded-xl border bg-white/80 outline-none" style={{ color: brand.navy[800] }}>
+                  <option value="">Todos los clientes</option>
+                  {customers?.customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+            </div>
+            {!arOpenInvoices || arOpenInvoices.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3">
+                <CheckCircle2 size={36} style={{ color: '#BBF7D0' }} />
+                <p className="text-slate-400 text-sm font-medium">No hay facturas pendientes de cobro</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                      {['#Factura', 'Cliente', 'Emisión', 'Vencimiento', 'Días', 'Total', 'Pagado', 'Balance', ''].map((h) => (
+                        <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {arOpenInvoices.map((inv, i) => {
+                      const overdue = inv.daysOverdue !== null && inv.daysOverdue > 0;
+                      const dueSoon = inv.daysOverdue !== null && inv.daysOverdue >= -7 && inv.daysOverdue <= 0;
+                      const statusColor = overdue ? '#DC2626' : dueSoon ? '#D97706' : '#16A34A';
+                      const statusBg   = overdue ? '#FEF2F2' : dueSoon ? '#FFFBEB' : '#F0FDF4';
+                      return (
+                        <tr key={inv.id}
+                          style={{ borderBottom: i < arOpenInvoices.length - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none' }}
+                          className="hover:bg-slate-50/40">
+                          <td className="px-4 py-3 font-mono text-xs font-semibold" style={{ color: brand.navy[700] }}>{inv.invoiceNumber}</td>
+                          <td className="px-4 py-3 font-medium" style={{ color: brand.navy[950] }}>
+                            {inv.customer.name}
+                            <div className="text-xs text-slate-400">{inv.customer.code}</div>
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 text-xs">{formatDate(inv.createdAt)}</td>
+                          <td className="px-4 py-3 text-xs">
+                            {inv.dueDate
+                              ? <span style={{ color: overdue ? '#DC2626' : brand.navy[800] }}>{formatDate(inv.dueDate)}</span>
+                              : <span className="text-slate-300">Sin fecha</span>}
+                          </td>
+                          <td className="px-4 py-3">
+                            {inv.daysOverdue !== null ? (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                                style={{ background: statusBg, color: statusColor }}>
+                                {inv.daysOverdue > 0 ? `+${inv.daysOverdue}d` : inv.daysOverdue === 0 ? 'Hoy' : `${Math.abs(inv.daysOverdue)}d`}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 text-xs">—</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3" style={{ color: brand.navy[800] }}>{formatCurrency(Number(inv.total))}</td>
+                          <td className="px-4 py-3 text-slate-500">{formatCurrency(Number(inv.paidAmount))}</td>
+                          <td className="px-4 py-3 font-bold" style={{ color: overdue ? '#DC2626' : brand.navy[950] }}>
+                            {formatCurrency(inv.balance)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1">
+                              <button onClick={() => { setSelectedId(inv.id); setModal('detail'); }}
+                                className="p-1.5 rounded-lg hover:bg-slate-100" title="Ver detalle">
+                                <Eye size={13} style={{ color: brand.navy[600] }} />
+                              </button>
+                              <button onClick={() => { setSelectedId(inv.id); setModal('payment'); setPayAmount(''); }}
+                                className="p-1.5 rounded-lg hover:bg-green-50" title="Registrar pago">
+                                <DollarSign size={13} style={{ color: '#16A34A' }} />
+                              </button>
+                              <a href={`/api/print/invoice/${inv.id}`} target="_blank" rel="noreferrer"
+                                className="p-1.5 rounded-lg hover:bg-slate-100 inline-flex items-center" title="PDF">
+                                <Printer size={13} style={{ color: '#64748B' }} />
+                              </a>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'invoices' && (<>
+
       {/* ── Filters ── */}
       <div style={glass} className="rounded-2xl p-4 flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2 flex-1 min-w-48 bg-white/60 rounded-xl px-3 py-2 border border-white/80">
@@ -524,6 +775,7 @@ export function InvoicingClient({ role }: { role: string }) {
           </div>
         </div>
       )}
+      </>)}
 
       {/* ══════════════════════════════════════════════════════════
           CREATE MODAL — Full-screen split panel

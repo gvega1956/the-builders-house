@@ -1226,4 +1226,99 @@ export const invoicingRouter = createTRPCRouter({
         return newInvoice;
       });
     }),
+
+  // ─── Cuentas por Cobrar ───────────────────────────────────────────────────
+
+  arSummary: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const open = await ctx.db.invoice.findMany({
+      where: { type: 'INVOICE', status: { in: ['ISSUED', 'PARTIAL'] } },
+      select: { total: true, paidAmount: true, dueDate: true },
+    });
+
+    let totalOwed = 0, totalOverdue = 0, dueSoon = 0;
+    let overdueCount = 0, dueSoonCount = 0;
+
+    for (const inv of open) {
+      const balance = Number(inv.total) - Number(inv.paidAmount);
+      totalOwed += balance;
+      if (inv.dueDate && inv.dueDate < now) {
+        totalOverdue += balance;
+        overdueCount++;
+      } else if (inv.dueDate && inv.dueDate <= in7) {
+        dueSoon += balance;
+        dueSoonCount++;
+      }
+    }
+
+    return { totalOwed, totalOverdue, dueSoon, openCount: open.length, overdueCount, dueSoonCount };
+  }),
+
+  arOpenInvoices: protectedProcedure
+    .input(z.object({ customerId: z.string().optional(), search: z.string().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const invoices = await ctx.db.invoice.findMany({
+        where: {
+          type: 'INVOICE',
+          status: { in: ['ISSUED', 'PARTIAL'] },
+          ...(input?.customerId && { customerId: input.customerId }),
+          ...(input?.search && {
+            OR: [
+              { invoiceNumber: { contains: input.search, mode: 'insensitive' } },
+              { customer: { name: { contains: input.search, mode: 'insensitive' } } },
+            ],
+          }),
+        },
+        include: {
+          customer: { select: { id: true, name: true, code: true, type: true } },
+          _count: { select: { items: true } },
+        },
+        orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+      });
+
+      return invoices.map((inv) => {
+        const balance = Number(inv.total) - Number(inv.paidAmount);
+        const daysOverdue = inv.dueDate
+          ? Math.floor((now.getTime() - inv.dueDate.getTime()) / (1000 * 60 * 60 * 24))
+          : null;
+        return { ...inv, balance, daysOverdue };
+      });
+    }),
+
+  arAging: protectedProcedure.query(async ({ ctx }) => {
+    const now = new Date();
+    const invoices = await ctx.db.invoice.findMany({
+      where: { type: 'INVOICE', status: { in: ['ISSUED', 'PARTIAL'] } },
+      include: { customer: { select: { id: true, name: true, code: true } } },
+    });
+
+    const map: Record<string, {
+      customerId: string; customerName: string; customerCode: string;
+      current: number; d30: number; d60: number; d90: number; d90plus: number; total: number;
+    }> = {};
+
+    for (const inv of invoices) {
+      const balance = Number(inv.total) - Number(inv.paidAmount);
+      if (balance <= 0.001) continue;
+      const cid = inv.customerId;
+      if (!map[cid]) {
+        map[cid] = { customerId: cid, customerName: inv.customer.name, customerCode: inv.customer.code, current: 0, d30: 0, d60: 0, d90: 0, d90plus: 0, total: 0 };
+      }
+      map[cid].total += balance;
+      if (!inv.dueDate || inv.dueDate >= now) {
+        map[cid].current += balance;
+      } else {
+        const days = Math.floor((now.getTime() - inv.dueDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (days <= 30)      map[cid].d30 += balance;
+        else if (days <= 60) map[cid].d60 += balance;
+        else if (days <= 90) map[cid].d90 += balance;
+        else                 map[cid].d90plus += balance;
+      }
+    }
+
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }),
 });
