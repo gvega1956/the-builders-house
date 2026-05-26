@@ -6,7 +6,7 @@ import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 import {
   Plus, Search, AlertTriangle, Package, X, ChevronLeft, ChevronRight,
-  Edit2, Filter, PackagePlus, ArrowLeftRight,
+  Edit2, Filter, PackagePlus, ArrowLeftRight, Printer, ChevronDown,
 } from 'lucide-react';
 
 const glass = {
@@ -37,6 +37,8 @@ export function InventoryClient() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [error, setError] = useState('');
+  const [showPrintMenu, setShowPrintMenu] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   // Stock entry / adjustment state
   const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId: string; currentStock: number } | null>(null);
@@ -53,6 +55,7 @@ export function InventoryClient() {
   });
 
   const { data: cats } = trpc.settings.categories.useQuery();
+  const utils = trpc.useUtils();
 
   const create = trpc.products.create.useMutation({
     onSuccess: () => { refetch(); closeModal(); },
@@ -68,6 +71,99 @@ export function InventoryClient() {
     onSuccess: () => { refetch(); closeModal(); },
     onError: (e) => setError(e.message),
   });
+
+  async function printInventory(filterCatId?: string) {
+    setShowPrintMenu(false);
+    setPrinting(true);
+    try {
+      const result = await utils.products.list.fetch({ categoryId: filterCatId || undefined, pageSize: 1000 });
+      const prods = result.products;
+      const catName = filterCatId ? (cats?.find(c => c.id === filterCatId)?.name ?? 'Categoría') : 'Todo el Inventario';
+      const date = new Date().toLocaleDateString('es-PR', { year: 'numeric', month: 'long', day: 'numeric' });
+      const totalRetail = prods.reduce((s, p) => s + Number(p.retailPrice) * p.totalStock, 0);
+      const lowCount = prods.filter(p => p.totalStock > 0 && p.totalStock <= p.minStock).length;
+      const zeroCount = prods.filter(p => p.totalStock === 0).length;
+
+      const rows = prods.map(p => {
+        const st = p.totalStock === 0 ? 'crit' : p.totalStock <= p.minStock ? 'low' : 'ok';
+        const label = st === 'ok' ? 'OK' : st === 'low' ? 'Stock Bajo' : 'Sin Stock';
+        return `<tr>
+          <td class="sku">${p.sku}</td>
+          <td>${p.name}${p.color ? ` <em>${p.color}</em>` : ''}</td>
+          <td>${p.category.name}</td>
+          <td class="num st-${st}">${p.totalStock}</td>
+          <td><span class="badge badge-${st}">${label}</span></td>
+          <td class="num">$${Number(p.retailPrice).toFixed(2)}</td>
+          <td class="num">$${Number(p.wholesalePrice).toFixed(2)}</td>
+          <td class="num muted">$${Number(p.unitCost).toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+
+      const html = `<!DOCTYPE html><html><head>
+        <meta charset="utf-8">
+        <title>Inventario — ${catName}</title>
+        <style>
+          *{margin:0;padding:0;box-sizing:border-box}
+          body{font-family:Arial,sans-serif;font-size:10.5px;color:#1e293b;padding:16px 20px}
+          .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0A1628;padding-bottom:10px;margin-bottom:12px}
+          .hdr h1{font-size:17px;font-weight:700;color:#0A1628;letter-spacing:-0.5px}
+          .hdr .sub{font-size:9.5px;color:#64748B;margin-top:3px}
+          .hdr .right{text-align:right;font-size:9.5px;color:#64748B}
+          table{width:100%;border-collapse:collapse}
+          th{background:#0A1628;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+          th.num,td.num{text-align:right}
+          td{padding:4.5px 8px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
+          tr:nth-child(even) td{background:#f8fafc}
+          .sku{font-family:monospace;font-size:9.5px;color:#475569}
+          em{color:#94A3B8;font-style:normal;font-size:9px;margin-left:4px}
+          .muted{color:#94A3B8}
+          .st-ok{color:#166534;font-weight:700}
+          .st-low{color:#854D0E;font-weight:700}
+          .st-crit{color:#991B1B;font-weight:700}
+          .badge{padding:1px 7px;border-radius:20px;font-size:8.5px;font-weight:600}
+          .badge-ok{background:#F0FDF4;color:#166534}
+          .badge-low{background:#FEF9C3;color:#854D0E}
+          .badge-crit{background:#FEF2F2;color:#991B1B}
+          .totals{margin-top:14px;padding:10px 14px;background:#f1f5f9;border-radius:6px;display:flex;gap:28px;align-items:center}
+          .totals .item{font-size:9.5px;color:#64748B}
+          .totals .val{font-size:14px;font-weight:700;color:#0A1628;display:block}
+          .totals .label{font-size:9px;color:#94A3B8}
+          @media print{body{padding:10px 12px}th{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+        </style>
+      </head><body>
+        <div class="hdr">
+          <div>
+            <h1>THE BUILDER'S HOUSE · Puerto Rico</h1>
+            <div class="sub">Reporte de Inventario · ${catName}</div>
+          </div>
+          <div class="right">
+            Generado: ${date}<br>
+            ${prods.length} producto(s)
+          </div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>SKU</th><th>Producto</th><th>Categoría</th>
+            <th class="num">Stock</th><th>Estado</th>
+            <th class="num">Precio Retail</th><th class="num">Precio Mayor</th><th class="num">Costo</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="totals">
+          <div class="item"><span class="val">${prods.length}</span><span class="label">Total Productos</span></div>
+          <div class="item"><span class="val" style="color:#854D0E">${lowCount}</span><span class="label">Stock Bajo</span></div>
+          <div class="item"><span class="val" style="color:#991B1B">${zeroCount}</span><span class="label">Sin Stock</span></div>
+          <div class="item" style="margin-left:auto"><span class="val">$${totalRetail.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span><span class="label">Valor Inventario (Retail)</span></div>
+        </div>
+        <script>window.onload=()=>window.print()<\/script>
+      </body></html>`;
+
+      const win = window.open('', '_blank', 'width=1100,height=700');
+      if (win) { win.document.write(html); win.document.close(); }
+    } finally {
+      setPrinting(false);
+    }
+  }
 
   function closeModal() {
     setModal('none');
@@ -188,13 +284,60 @@ export function InventoryClient() {
             {total} productos · {data?.products.filter((p) => p.totalStock <= p.minStock).length ?? 0} con stock bajo
           </p>
         </div>
-        <button
-          onClick={() => { setModal('create'); setError(''); }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-opacity hover:opacity-90"
-          style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}
-        >
-          <Plus size={16} /> Nuevo Producto
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Print button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowPrintMenu(m => !m)}
+              disabled={printing}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border hover:bg-slate-50 transition-colors disabled:opacity-50"
+              style={{ color: brand.navy[800], borderColor: '#E2E8F0', backgroundColor: 'white' }}
+            >
+              <Printer size={15} />
+              {printing ? 'Generando...' : 'Imprimir'}
+              <ChevronDown size={13} />
+            </button>
+
+            {showPrintMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowPrintMenu(false)} />
+                <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl w-52 overflow-hidden">
+                  <div className="px-3 py-2 text-xs font-semibold text-slate-400 border-b border-slate-100 uppercase tracking-wide">
+                    Imprimir Inventario
+                  </div>
+                  <button
+                    onClick={() => void printInventory()}
+                    className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-slate-50 text-left font-medium"
+                    style={{ color: brand.navy[950] }}>
+                    <Printer size={13} style={{ color: brand.orange[500] }} />
+                    Todo el Inventario
+                  </button>
+                  {cats && cats.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 text-xs text-slate-400 border-t border-slate-100">Por categoría</div>
+                      {cats.map(c => (
+                        <button key={c.id}
+                          onClick={() => void printInventory(c.id)}
+                          className="w-full px-4 py-2 text-sm hover:bg-slate-50 text-left"
+                          style={{ color: brand.navy[800] }}>
+                          {c.name}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
+            onClick={() => { setModal('create'); setError(''); }}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-sm font-semibold transition-opacity hover:opacity-90"
+            style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}
+          >
+            <Plus size={16} /> Nuevo Producto
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
