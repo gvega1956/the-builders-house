@@ -65,7 +65,7 @@ const LAMA4_VENTANAS: VentanaRow[] = [
   { width: 24, heightIn: 25,    heightDisplay: '25',     aeStock: 16,  bgStock: 4  },
   { width: 24, heightIn: 29.75, heightDisplay: '29 3/4', aeStock: 1,   bgStock: 8  },
   { width: 24, heightIn: 37.75, heightDisplay: '37 3/4', aeStock: 51,  bgStock: 26 },
-  { width: 24, heightIn: 45.75, heightDisplay: '45 3/4', aeStock: 107, bgStock: 96,  aeCost: 26.69 },
+  { width: 24, heightIn: 45.75, heightDisplay: '45 3/4', aeStock: 105, bgStock: 96,  aeCost: 26.69 },
   { width: 24, heightIn: 53.75, heightDisplay: '53 3/4', aeStock: 75,  bgStock: 50,  aeCost: 31.35 },
   { width: 24, heightIn: 56,    heightDisplay: '56',     aeStock: 6,   bgStock: 0  },
   { width: 24, heightIn: 57.75, heightDisplay: '57 3/4', aeStock: 22,  bgStock: 14 },
