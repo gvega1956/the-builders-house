@@ -165,9 +165,15 @@ function InvoicePreview({
           <div className="flex justify-between" style={{ color: '#64748B' }}>
             <span>Subtotal</span><span>{formatCurrency(subtotal)}</span>
           </div>
-          <div className="flex justify-between" style={{ color: '#64748B' }}>
-            <span>IVU ({(taxRate * 100).toFixed(1)}%)</span><span>{formatCurrency(taxAmt)}</span>
-          </div>
+          {taxRate > 0 ? (
+            <div className="flex justify-between" style={{ color: '#64748B' }}>
+              <span>IVU ({(taxRate * 100).toFixed(1)}%)</span><span>{formatCurrency(taxAmt)}</span>
+            </div>
+          ) : (
+            <div className="flex justify-between" style={{ color: '#94A3B8' }}>
+              <span>IVU</span><span>Exento</span>
+            </div>
+          )}
           <div className="flex justify-between font-bold text-sm pt-1"
             style={{ borderTop: `2px solid ${brand.navy[950]}`, color: brand.navy[950] }}>
             <span>TOTAL</span><span>{formatCurrency(total)}</span>
@@ -1107,8 +1113,8 @@ export function InvoicingClient({ role }: { role: string }) {
                       <span>Subtotal</span><span className="font-medium">{formatCurrency(subtotal)}</span>
                     </div>
                     <div className="flex justify-between text-sm" style={{ color: applyIvu ? '#64748B' : '#94A3B8' }}>
-                      <span>IVU ({(taxRate * 100).toFixed(1)}%)</span>
-                      <span className="font-medium">{applyIvu ? formatCurrency(taxAmount) : 'Exento'}</span>
+                      <span>{applyIvu ? `IVU (${(taxRate * 100).toFixed(1)}%)` : 'IVU (Exento)'}</span>
+                      <span className="font-medium">{applyIvu ? formatCurrency(taxAmount) : ''}</span>
                     </div>
                     <div className="flex justify-between text-base font-bold pt-2 border-t border-slate-200" style={{ color: brand.navy[950] }}>
                       <span>Total</span><span>{formatCurrency(totalAmount)}</span>
