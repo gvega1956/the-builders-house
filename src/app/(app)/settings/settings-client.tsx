@@ -66,12 +66,17 @@ export function SettingsClient() {
   const [editSupPhone, setEditSupPhone] = useState('');
   const [editSupTerms, setEditSupTerms] = useState('');
 
-  // Product Locations
+  // Product Locations — create
   const [plWarehouseId, setPlWarehouseId] = useState('');
   const [plWarehouseName, setPlWarehouseName] = useState('');
   const [plProductId, setPlProductId] = useState('');
   const [plCode, setPlCode] = useState('');
   const [plQty, setPlQty] = useState(0);
+  // Product Locations — edit
+  const [editLocId,   setEditLocId]   = useState('');
+  const [editLocCode, setEditLocCode] = useState('');
+  // Warehouse expand state
+  const [expandedWh,  setExpandedWh]  = useState<string | null>(null);
 
   const { data: sysConfig, refetch: refetchConfig } = trpc.settings.getSystemConfig.useQuery();
   const setConfig = trpc.settings.setSystemConfig.useMutation({ onSuccess: () => refetchConfig() });
@@ -123,6 +128,10 @@ export function SettingsClient() {
     onSuccess: () => { refetchWh(); closeModal(); },
     onError: (e) => setError(e.message),
   });
+  const updateProductLoc = trpc.settings.updateProductLocation.useMutation({
+    onSuccess: () => { refetchWh(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
 
   const updateCat = trpc.settings.updateCategory.useMutation({
     onSuccess: () => { refetchCats(); closeModal(); },
@@ -158,6 +167,7 @@ export function SettingsClient() {
     setSupName(''); setSupCountry('DO'); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupTerms('');
     setEditSupId(''); setEditSupName(''); setEditSupContact(''); setEditSupEmail(''); setEditSupPhone(''); setEditSupTerms('');
     setPlWarehouseId(''); setPlWarehouseName(''); setPlProductId(''); setPlCode(''); setPlQty(0);
+    setEditLocId(''); setEditLocCode('');
   }
 
   return (
@@ -334,29 +344,79 @@ export function SettingsClient() {
             </thead>
             <tbody>
               {warehouses?.map((w, i) => (
-                <tr key={w.id} style={{ borderBottom: i < (warehouses.length - 1) ? '1px solid rgba(10,22,40,0.05)' : 'none' }}>
-                  <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{w.name}</td>
-                  <td className="px-5 py-3 text-slate-500">{w.address ?? '—'}</td>
-                  <td className="px-5 py-3" style={{ color: brand.navy[800] }}>{w._count.locations}</td>
-                  <td className="px-5 py-3">
-                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                      style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>Activo</span>
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex gap-1">
-                      <button onClick={() => { setEditWhId(w.id); setEditWhName(w.name); setEditWhAddr(w.address ?? ''); setError(''); setModal('editWarehouse'); }}
-                        className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar almacén">
-                        <Pencil size={13} style={{ color: '#2563EB' }} />
-                      </button>
+                <React.Fragment key={w.id}>
+                  <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.05)' }}>
+                    <td className="px-5 py-3 font-medium" style={{ color: brand.navy[950] }}>{w.name}</td>
+                    <td className="px-5 py-3 text-slate-500">{w.address ?? '—'}</td>
+                    <td className="px-5 py-3">
                       <button
-                        onClick={() => { setPlWarehouseId(w.id); setPlWarehouseName(w.name); setModal('location'); }}
-                        className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
-                        style={{ color: brand.navy[700] }}>
-                        <Plus size={12} /> Ubicación
+                        onClick={() => setExpandedWh(expandedWh === w.id ? null : w.id)}
+                        className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-lg hover:bg-slate-100 transition-colors"
+                        style={{ color: brand.navy[700] }}
+                        title="Ver ubicaciones"
+                      >
+                        {w._count.locations} ubicaciones
+                        <span style={{ fontSize: 10 }}>{expandedWh === w.id ? '▲' : '▼'}</span>
                       </button>
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                        style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>Activo</span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex gap-1">
+                        <button onClick={() => { setEditWhId(w.id); setEditWhName(w.name); setEditWhAddr(w.address ?? ''); setError(''); setModal('editWarehouse'); }}
+                          className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar almacén">
+                          <Pencil size={13} style={{ color: '#2563EB' }} />
+                        </button>
+                        <button
+                          onClick={() => { setPlWarehouseId(w.id); setPlWarehouseName(w.name); setModal('location'); }}
+                          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
+                          style={{ color: brand.navy[700] }}>
+                          <Plus size={12} /> Ubicación
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {/* Expanded locations sub-table */}
+                  {expandedWh === w.id && (
+                    <tr>
+                      <td colSpan={5} className="px-5 pb-4 pt-0">
+                        {(w.locations as unknown as Array<{ id: string; locationCode: string; quantityOnHand: number; reservedQuantity: number; productId: string; product: { name: string; sku: string } }>).length === 0 ? (
+                          <p className="text-xs py-2" style={{ color: '#94A3B8' }}>Sin ubicaciones. Usá el botón "+ Ubicación" para agregar.</p>
+                        ) : (
+                          <table className="w-full text-xs rounded-xl overflow-hidden" style={{ backgroundColor: 'rgba(10,22,40,0.03)' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.06)' }}>
+                                {['Código', 'Producto', 'SKU', 'En mano', 'Reservado', ''].map((h) => (
+                                  <th key={h} className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(w.locations as unknown as Array<{ id: string; locationCode: string; quantityOnHand: number; reservedQuantity: number; productId: string; product: { name: string; sku: string } }>).map((loc) => (
+                                <tr key={loc.id} style={{ borderBottom: '1px solid rgba(10,22,40,0.04)' }}>
+                                  <td className="px-3 py-2 font-mono font-semibold" style={{ color: brand.navy[800] }}>{loc.locationCode}</td>
+                                  <td className="px-3 py-2" style={{ color: brand.navy[700] }}>{loc.product.name}</td>
+                                  <td className="px-3 py-2 font-mono" style={{ color: '#94A3B8' }}>{loc.product.sku}</td>
+                                  <td className="px-3 py-2 text-center font-semibold" style={{ color: brand.semantic.success }}>{loc.quantityOnHand}</td>
+                                  <td className="px-3 py-2 text-center" style={{ color: '#64748B' }}>{loc.reservedQuantity}</td>
+                                  <td className="px-3 py-2">
+                                    <button
+                                      onClick={() => { setEditLocId(loc.id); setEditLocCode(loc.locationCode); setError(''); setModal('editLocation'); }}
+                                      className="p-1 rounded hover:bg-blue-50" title="Editar código de ubicación">
+                                      <Pencil size={11} style={{ color: '#2563EB' }} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -520,6 +580,7 @@ export function SettingsClient() {
                   : modal === 'warehouse' ? 'Nuevo Almacén'
                   : modal === 'editWarehouse' ? 'Editar Almacén'
                   : modal === 'location' ? 'Agregar Ubicación'
+                  : modal === 'editLocation' ? 'Editar Ubicación'
                   : modal === 'editSupplier' ? 'Editar Proveedor'
                   : 'Nuevo Proveedor'}
               </h2>
@@ -576,6 +637,28 @@ export function SettingsClient() {
                 }} placeholder="Ej: Ventanas Corredizas" /></F>
                 <F label="Slug"><input value={catSlug} onChange={(e) => setCatSlug(e.target.value)} placeholder="ventanas-corredizas" /></F>
                 <Btns onCancel={closeModal} onConfirm={() => createCat.mutate({ name: catName, slug: catSlug })} loading={createCat.isPending} label="Crear Categoría" />
+              </div>
+            )}
+
+            {modal === 'editLocation' && (
+              <div className="space-y-3">
+                <p className="text-xs" style={{ color: '#64748B' }}>
+                  Solo se puede cambiar el código de ubicación. Para mover stock usá Ajustes o Transferencias.
+                </p>
+                <F label="Código de Ubicación *">
+                  <input
+                    value={editLocCode}
+                    onChange={(e) => setEditLocCode(e.target.value)}
+                    placeholder="Ej: A-12-03"
+                    autoFocus
+                  />
+                </F>
+                <Btns
+                  onCancel={closeModal}
+                  onConfirm={() => updateProductLoc.mutate({ id: editLocId, locationCode: editLocCode })}
+                  loading={updateProductLoc.isPending}
+                  label="Guardar Cambios"
+                />
               </div>
             )}
 
