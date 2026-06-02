@@ -88,7 +88,7 @@ export function ReceiveClient() {
       locationId,
       movementType: 'IN',
       quantity: parseInt(quantity, 10),
-      referenceType: 'ADJUSTMENT',
+      referenceType: 'DIRECT_RECEIPT',
       notes: notes || undefined,
     });
   }

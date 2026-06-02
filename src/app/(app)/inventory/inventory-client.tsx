@@ -227,7 +227,7 @@ export function InventoryClient() {
         locationId: stockProduct.locationId,
         movementType: 'IN',
         quantity: raw,
-        referenceType: 'PURCHASE_ORDER',
+        referenceType: 'DIRECT_RECEIPT',
         notes: stockNotes || undefined,
       });
     } else {

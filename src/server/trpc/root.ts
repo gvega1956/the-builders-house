@@ -9,6 +9,7 @@ import { auditRouter } from './routers/audit';
 import { settingsRouter } from './routers/settings';
 import { cycleCountsRouter } from './routers/cyclecounts';
 import { stockRouter } from './routers/stock';
+import { transfersRouter } from './routers/transfers';
 
 export const appRouter = createTRPCRouter({
   products: productsRouter,
@@ -21,6 +22,7 @@ export const appRouter = createTRPCRouter({
   settings: settingsRouter,
   cycleCounts: cycleCountsRouter,
   stock: stockRouter,
+  transfers: transfersRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 
 // C-2: valid referenceType values per movementType
 const VALID_REFERENCE_TYPES: Record<string, string[]> = {
-  IN:         ['PURCHASE_ORDER', 'ADJUSTMENT'],
+  IN:         ['PURCHASE_ORDER', 'ADJUSTMENT', 'DIRECT_RECEIPT'],
   OUT:        ['INVOICE'],
   RETURN:     ['INVOICE'],
   DAMAGE:     ['DAMAGE_REPORT'],
@@ -19,7 +19,7 @@ const movementCreateSchema = z
     destinationLocationId: z.string().cuid().optional(),
     movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']),
     quantity: z.number().int().refine((n) => n !== 0, 'La cantidad no puede ser cero'),
-    referenceType: z.enum(['INVOICE', 'PURCHASE_ORDER', 'ADJUSTMENT', 'TRANSFER', 'DAMAGE_REPORT', 'CYCLE_COUNT']),
+    referenceType: z.enum(['INVOICE', 'PURCHASE_ORDER', 'ADJUSTMENT', 'TRANSFER', 'DAMAGE_REPORT', 'CYCLE_COUNT', 'DIRECT_RECEIPT']),
     referenceId: z.string().optional(),
     photoUrl: z.string().url().optional(),
     notes: z.string().max(1000).optional(),
