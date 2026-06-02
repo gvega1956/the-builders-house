@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, ScanLine, Warehouse, Receipt,
   Users, Truck, BarChart3, Shield, Settings, ChevronDown,
   ShoppingCart, ClipboardCheck, ArrowLeftRight, PackagePlus,
-  SlidersHorizontal,
+  SlidersHorizontal, RotateCcw,
 } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { brand } from '@/lib/brand';
@@ -111,6 +111,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
         <NavItem icon={PackagePlus} label="Recibir Mercancía" href="/operations/receive" />
         <NavItem icon={ArrowLeftRight} label="Transferencias" href="/operations/transfers" />
         <NavItem icon={SlidersHorizontal} label="Ajustes de Stock" href="/operations/adjustments" />
+        <NavItem icon={RotateCcw} label="Devoluciones" href="/operations/returns" />
         <NavItem icon={ScanLine} label="Escaneo" href="/scan" />
         <NavItem icon={ClipboardCheck} label="Conteos Cíclicos" href="/cycle-counts" />
 
