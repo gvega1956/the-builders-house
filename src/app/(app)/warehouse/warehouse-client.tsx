@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
-import { Warehouse, Package, MapPin, Search } from 'lucide-react';
+import { Warehouse, Package, MapPin, Search, BarChart3, Hash } from 'lucide-react';
 
 const glass = {
   backgroundColor: 'rgba(255,255,255,0.72)',
@@ -18,6 +18,7 @@ export function WarehouseClient() {
   const [selectedWh, setSelectedWh] = useState<string | null>(null);
 
   const { data: warehouses, isLoading } = trpc.settings.warehouses.useQuery();
+  const { data: summary } = trpc.stock.warehousesSummary.useQuery();
 
   const filtered = warehouses ?? [];
   const selected = filtered.find((w) => w.id === selectedWh) ?? filtered[0];
@@ -42,6 +43,46 @@ export function WarehouseClient() {
           Vista de ubicaciones y stock por almacén
         </p>
       </div>
+
+      {/* KPI cards globales */}
+      {summary && summary.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          {/* Total almacenes */}
+          <div style={glass} className="rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: brand.orange[50] }}>
+              <Warehouse size={18} style={{ color: brand.orange[500] }} />
+            </div>
+            <div>
+              <div className="text-xl font-bold" style={{ color: brand.navy[950] }}>{summary.length}</div>
+              <div className="text-xs" style={{ color: '#94A3B8' }}>Almacenes activos</div>
+            </div>
+          </div>
+          {/* Total unidades */}
+          <div style={glass} className="rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#F0FDF4' }}>
+              <BarChart3 size={18} style={{ color: brand.semantic.success }} />
+            </div>
+            <div>
+              <div className="text-xl font-bold" style={{ color: brand.navy[950] }}>
+                {summary.reduce((s, w) => s + w.totalUnits, 0).toLocaleString()}
+              </div>
+              <div className="text-xs" style={{ color: '#94A3B8' }}>Unidades totales</div>
+            </div>
+          </div>
+          {/* Total SKUs */}
+          <div style={glass} className="rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#EFF6FF' }}>
+              <Hash size={18} style={{ color: brand.semantic.info }} />
+            </div>
+            <div>
+              <div className="text-xl font-bold" style={{ color: brand.navy[950] }}>
+                {summary.reduce((s, w) => s + w.skuCount, 0).toLocaleString()}
+              </div>
+              <div className="text-xs" style={{ color: '#94A3B8' }}>SKUs en sistema</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-20 text-slate-400 text-sm">Cargando almacenes...</div>

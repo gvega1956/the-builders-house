@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Plus, Search, Users, X, Edit2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Search, Users, X, Edit2, ChevronLeft, ChevronRight, Archive, RefreshCw } from 'lucide-react';
 
 const glass = {
   backgroundColor: 'rgba(255,255,255,0.72)',
@@ -37,6 +37,9 @@ export function CustomersClient() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<CForm>(empty);
   const [error, setError] = useState('');
+  const [deactivateTarget, setDeactivateTarget] = useState<{ id: string; name: string } | null>(null);
+  const [reconcileTarget, setReconcileTarget] = useState<{ id: string; name: string } | null>(null);
+  const [reconcileSuccess, setReconcileSuccess] = useState<string | null>(null);
 
   const { data, isLoading, refetch } = trpc.customers.list.useQuery({
     search: search || undefined,
@@ -52,6 +55,21 @@ export function CustomersClient() {
 
   const update = trpc.customers.update.useMutation({
     onSuccess: () => { refetch(); close_(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const deactivate = trpc.customers.deactivate.useMutation({
+    onSuccess: () => { setDeactivateTarget(null); void refetch(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const reconcile = trpc.customers.reconcileBalance.useMutation({
+    onSuccess: (result) => {
+      setReconcileTarget(null);
+      setReconcileSuccess(`Balance recalculado: ${formatCurrency(Number(result.currentBalance))}`);
+      void refetch();
+      setTimeout(() => setReconcileSuccess(null), 4000);
+    },
     onError: (e) => setError(e.message),
   });
 
@@ -188,9 +206,29 @@ export function CustomersClient() {
                       {formatCurrency(Number(c.currentBalance))}
                     </td>
                     <td className="px-4 py-3">
-                      <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-slate-100">
-                        <Edit2 size={14} style={{ color: brand.navy[600] }} />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEdit(c)}
+                          className="p-1.5 rounded-lg hover:bg-slate-100"
+                          title="Editar cliente"
+                        >
+                          <Edit2 size={14} style={{ color: brand.navy[600] }} />
+                        </button>
+                        <button
+                          onClick={() => setReconcileTarget({ id: c.id, name: c.name })}
+                          className="p-1.5 rounded-lg hover:bg-blue-50"
+                          title="Recalcular balance (Admin)"
+                        >
+                          <RefreshCw size={14} style={{ color: '#0284C7' }} />
+                        </button>
+                        <button
+                          onClick={() => setDeactivateTarget({ id: c.id, name: c.name })}
+                          className="p-1.5 rounded-lg hover:bg-red-50"
+                          title="Archivar cliente"
+                        >
+                          <Archive size={14} style={{ color: '#DC2626' }} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -212,6 +250,111 @@ export function CustomersClient() {
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="p-1.5 rounded-lg border disabled:opacity-40">
               <ChevronRight size={16} />
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Banner de éxito de reconciliación */}
+      {reconcileSuccess && (
+        <div
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium shadow-lg"
+          style={{ backgroundColor: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }}
+        >
+          <RefreshCw size={14} />
+          {reconcileSuccess}
+        </div>
+      )}
+
+      {/* Modal — Confirmar Desactivación */}
+      {deactivateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            style={{ backdropFilter: 'blur(4px)' }}
+            onClick={() => setDeactivateTarget(null)}
+          />
+          <div
+            className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#FEF2F2' }}>
+                <Archive size={20} style={{ color: '#DC2626' }} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>Archivar Cliente</h2>
+                <p className="text-xs" style={{ color: '#94A3B8' }}>El cliente no aparecerá en búsquedas activas</p>
+              </div>
+            </div>
+            <p className="text-sm mb-5" style={{ color: '#475569' }}>
+              ¿Marcar como inactivo{' '}
+              <span className="font-semibold" style={{ color: brand.navy[950] }}>{deactivateTarget.name}</span>?
+              {' '}Sus facturas e historial se preservan.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeactivateTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm border hover:bg-slate-50"
+                style={{ color: '#64748B' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => deactivate.mutate(deactivateTarget.id)}
+                disabled={deactivate.isPending}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ backgroundColor: '#DC2626' }}
+              >
+                {deactivate.isPending ? 'Archivando...' : 'Sí, Archivar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Confirmar Reconciliación de Balance */}
+      {reconcileTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            style={{ backdropFilter: 'blur(4px)' }}
+            onClick={() => setReconcileTarget(null)}
+          />
+          <div
+            className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: '#EFF6FF' }}>
+                <RefreshCw size={20} style={{ color: '#0284C7' }} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>Recalcular Balance</h2>
+                <p className="text-xs" style={{ color: '#94A3B8' }}>Requiere rol Administrador</p>
+              </div>
+            </div>
+            <p className="text-sm mb-5" style={{ color: '#475569' }}>
+              Recalcular el balance de{' '}
+              <span className="font-semibold" style={{ color: brand.navy[950] }}>{reconcileTarget.name}</span>{' '}
+              sumando todas las facturas ISSUED y PARTIAL no pagadas completamente.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setReconcileTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm border hover:bg-slate-50"
+                style={{ color: '#64748B' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => reconcile.mutate(reconcileTarget.id)}
+                disabled={reconcile.isPending}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ backgroundColor: '#0284C7' }}
+              >
+                {reconcile.isPending ? 'Recalculando...' : 'Recalcular'}
+              </button>
+            </div>
           </div>
         </div>
       )}
