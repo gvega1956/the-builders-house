@@ -1,12 +1,11 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Package, ScanLine, Warehouse, Receipt,
   Users, Truck, BarChart3, Shield, Settings, ChevronDown,
-  ShoppingCart, ClipboardCheck,
+  ShoppingCart, ClipboardCheck, ArrowLeftRight,
 } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { brand } from '@/lib/brand';
@@ -86,11 +85,11 @@ export function Sidebar({ user }: { user: SidebarUser }) {
     <aside
       className="w-64 flex flex-col shrink-0"
       style={{
-          backgroundColor: 'rgba(10,22,40,0.92)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRight: '1px solid rgba(255,255,255,0.06)',
-        }}
+        backgroundColor: 'rgba(10,22,40,0.92)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        borderRight: '1px solid rgba(255,255,255,0.06)',
+      }}
     >
       {/* Logo */}
       <div
@@ -102,23 +101,40 @@ export function Sidebar({ user }: { user: SidebarUser }) {
 
       {/* Navegación */}
       <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-        <NavSection label="Operación" />
+
+        {/* 1 — DASHBOARD */}
         <NavItem icon={LayoutDashboard} label="Dashboard" href="/dashboard" />
-        <NavItem icon={Package} label="Inventario" href="/inventory" />
+
+        {/* 2 — OPERACIONES */}
+        <NavSection label="Operaciones" />
+        <NavItem icon={ArrowLeftRight} label="Transferencias" href="/operations/transfers" />
         <NavItem icon={ScanLine} label="Escaneo" href="/scan" />
-        <NavItem icon={Warehouse} label="Warehouse" href="/warehouse" />
         <NavItem icon={ClipboardCheck} label="Conteos Cíclicos" href="/cycle-counts" />
 
-        <NavSection label="Comercial" />
+        {/* 3 — INVENTARIO */}
+        <NavSection label="Inventario" />
+        <NavItem icon={Package} label="Productos" href="/inventory" />
+        <NavItem icon={Warehouse} label="Almacenes" href="/warehouse" />
+
+        {/* 4 — COMPRAS */}
+        <NavSection label="Compras · RD" />
+        <NavItem icon={Truck} label="Órdenes de Compra" href="/purchases" />
+
+        {/* 5 — VENTAS */}
+        <NavSection label="Ventas" />
         <NavItem icon={ShoppingCart} label="POS" href="/pos" />
         <NavItem icon={Receipt} label="Facturación" href="/invoicing" />
         <NavItem icon={Users} label="Clientes" href="/customers" />
-        <NavItem icon={Truck} label="Compras · RD" href="/purchases" />
 
+        {/* 6 — INTELIGENCIA */}
         <NavSection label="Inteligencia" />
         <NavItem icon={BarChart3} label="Reportes" href="/reports" />
         <NavItem icon={Shield} label="Auditoría" href="/audit" />
+
+        {/* 7 — ADMINISTRACIÓN */}
+        <NavSection label="Administración" />
         <NavItem icon={Settings} label="Configuración" href="/settings" />
+
       </nav>
 
       {/* Usuario */}
