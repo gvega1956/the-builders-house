@@ -8,7 +8,7 @@ import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, Package, DollarSign, Users, BarChart3 } from 'lucide-react';
+import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers } from 'lucide-react';
 
 const PIE_COLORS = [brand.orange[500], brand.navy[700], brand.orange[400], brand.navy[600], '#059669'];
 
@@ -20,6 +20,8 @@ export function ReportsClient() {
   const { data: summary } = trpc.dashboard.reportSummary.useQuery();
   const { data: lowStockData } = trpc.products.lowStock.useQuery();
   const { data: customers } = trpc.customers.list.useQuery({ pageSize: 200 });
+  const { data: lama3 } = trpc.stock.getTotalByLama.useQuery({ lama: '3' });
+  const { data: lama4 } = trpc.stock.getTotalByLama.useQuery({ lama: '4' });
 
   const totalRevenue = summary?.totalRevenue ?? 0;
   const pendingBalance = summary?.pendingBalance ?? 0;
@@ -213,6 +215,79 @@ export function ReportsClient() {
           <EmptyChart label="No hay clientes registrados" />
         )}
       </div>
+
+      {/* Reporte de Vidrio por Lama */}
+      {(lama3 ?? lama4) && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Layers size={16} style={{ color: brand.navy[700] }} />
+            <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: brand.navy[800] }}>
+              Reporte de Vidrio por Lama
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            {([lama3, lama4] as const).map((data, idx) => {
+              if (!data) return null;
+              const lamaLabel = `Lama ${data.lama}"`;
+              const whKeys = Object.keys(data.byWarehouse);
+              return (
+                <div key={idx} style={glass} className="rounded-2xl p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold" style={{ color: brand.navy[950] }}>{lamaLabel}</h3>
+                    <span
+                      className="text-xs font-bold px-2.5 py-1 rounded-full"
+                      style={{ backgroundColor: brand.navy[950], color: '#FFFFFF' }}
+                    >
+                      {data.total} uds total
+                    </span>
+                  </div>
+
+                  {/* AE vs BG */}
+                  <div className="grid grid-cols-2 gap-3 mb-4">
+                    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: '#F0F9FF' }}>
+                      <div className="text-xl font-bold" style={{ color: brand.semantic.info }}>{data.ae}</div>
+                      <div className="text-xs mt-0.5" style={{ color: '#64748B' }}>Acid Etched (AE)</div>
+                    </div>
+                    <div className="rounded-xl p-3 text-center" style={{ backgroundColor: '#F8FAFC' }}>
+                      <div className="text-xl font-bold" style={{ color: brand.navy[700] }}>{data.bg}</div>
+                      <div className="text-xs mt-0.5" style={{ color: '#64748B' }}>Bronze/Grey (BG)</div>
+                    </div>
+                  </div>
+
+                  {/* Por almacén */}
+                  {whKeys.length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#94A3B8' }}>
+                        Por almacén
+                      </div>
+                      <div className="space-y-1.5">
+                        {whKeys.map((wh) => {
+                          const d = data.byWarehouse[wh]!;
+                          const whTotal = d.ae + d.bg;
+                          return (
+                            <div
+                              key={wh}
+                              className="flex items-center justify-between px-3 py-2 rounded-lg text-xs"
+                              style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
+                            >
+                              <span style={{ color: brand.navy[800] }}>{wh}</span>
+                              <div className="flex items-center gap-3">
+                                <span style={{ color: brand.semantic.info }}>AE: {d.ae}</span>
+                                <span style={{ color: '#64748B' }}>BG: {d.bg}</span>
+                                <span className="font-bold" style={{ color: brand.navy[950] }}>{whTotal}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
