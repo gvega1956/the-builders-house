@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils';
 import {
   Plus, Search, AlertTriangle, Package, X, ChevronLeft, ChevronRight,
   Edit2, Filter, PackagePlus, ArrowLeftRight, Printer, ChevronDown,
+  Eye, Archive, History, MapPin,
 } from 'lucide-react';
 
 const glass = {
@@ -39,6 +40,8 @@ export function InventoryClient() {
   const [error, setError] = useState('');
   const [showPrintMenu, setShowPrintMenu] = useState(false);
   const [printing, setPrinting] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [deactivateTarget, setDeactivateTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Stock entry / adjustment state
   const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId: string; currentStock: number } | null>(null);
@@ -69,6 +72,16 @@ export function InventoryClient() {
 
   const stockIn = trpc.movements.create.useMutation({
     onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const { data: detail, isLoading: detailLoading } = trpc.products.byId.useQuery(
+    detailId!,
+    { enabled: !!detailId },
+  );
+
+  const deactivate = trpc.products.deactivate.useMutation({
+    onSuccess: () => { setDeactivateTarget(null); void refetch(); },
     onError: (e) => setError(e.message),
   });
 
@@ -452,6 +465,13 @@ export function InventoryClient() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
                           <button
+                            onClick={() => setDetailId(p.id)}
+                            className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                            title="Ver detalle"
+                          >
+                            <Eye size={14} style={{ color: '#0284C7' }} />
+                          </button>
+                          <button
                             onClick={() => openStockModal(p, 'IN')}
                             className="p-1.5 rounded-lg hover:bg-green-50 transition-colors"
                             title="Entrada de stock"
@@ -471,6 +491,13 @@ export function InventoryClient() {
                             title="Editar producto"
                           >
                             <Edit2 size={14} style={{ color: brand.navy[600] }} />
+                          </button>
+                          <button
+                            onClick={() => setDeactivateTarget({ id: p.id, name: p.name })}
+                            className="p-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                            title="Archivar producto"
+                          >
+                            <Archive size={14} style={{ color: '#DC2626' }} />
                           </button>
                         </div>
                       </td>
@@ -593,6 +620,313 @@ export function InventoryClient() {
                   ? 'linear-gradient(135deg, #16A34A, #15803D)'
                   : 'linear-gradient(135deg, #D97706, #B45309)' }}>
                 {stockIn.isPending ? 'Guardando...' : stockMode === 'IN' ? 'Registrar Entrada' : 'Aplicar Ajuste'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Panel lateral — Detalle del Producto */}
+      {detailId && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/20"
+            style={{ backdropFilter: 'blur(2px)' }}
+            onClick={() => setDetailId(null)}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-50 w-[420px] flex flex-col shadow-2xl overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.98)' }}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-5 py-4 border-b"
+              style={{ borderColor: '#E2E8F0', backgroundColor: brand.navy[950] }}
+            >
+              <div className="flex items-center gap-2">
+                <Package size={16} style={{ color: brand.orange[400] }} />
+                <span className="text-sm font-semibold text-white">Detalle del Producto</span>
+              </div>
+              <button
+                onClick={() => setDetailId(null)}
+                className="p-1 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <X size={16} style={{ color: '#94A3B8' }} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-5">
+              {detailLoading ? (
+                <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
+                  Cargando...
+                </div>
+              ) : detail ? (
+                <>
+                  {/* Info básica */}
+                  <div>
+                    <div
+                      className="text-xs font-mono font-bold mb-0.5"
+                      style={{ color: brand.orange[500] }}
+                    >
+                      {detail.sku}
+                    </div>
+                    <div className="text-lg font-bold" style={{ color: brand.navy[950] }}>
+                      {detail.name}
+                    </div>
+                    {detail.color && (
+                      <div className="text-sm mt-0.5" style={{ color: '#64748B' }}>{detail.color}</div>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span
+                        className="px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={{ backgroundColor: brand.orange[50], color: brand.orange[600] }}
+                      >
+                        {detail.category.name}
+                      </span>
+                      {detail.type && (
+                        <span
+                          className="px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{ backgroundColor: '#F1F5F9', color: '#475569' }}
+                        >
+                          {detail.type}
+                        </span>
+                      )}
+                      {!detail.isActive && (
+                        <span
+                          className="px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{ backgroundColor: '#FEF2F2', color: '#DC2626' }}
+                        >
+                          Inactivo
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Precios */}
+                  <div style={glass} className="rounded-xl p-3">
+                    <div className="text-xs font-semibold mb-2" style={{ color: '#94A3B8' }}>
+                      PRECIOS
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'Costo', value: Number(detail.unitCost) },
+                        { label: 'Retail', value: Number(detail.retailPrice) },
+                        { label: 'Mayoreo', value: Number(detail.wholesalePrice) },
+                      ].map(({ label, value }) => (
+                        <div key={label} className="text-center">
+                          <div className="text-xs" style={{ color: '#94A3B8' }}>{label}</div>
+                          <div className="text-sm font-bold" style={{ color: brand.navy[950] }}>
+                            {formatCurrency(value)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Stock por almacén */}
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <MapPin size={13} style={{ color: '#94A3B8' }} />
+                      <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>
+                        Stock por Almacén
+                      </span>
+                    </div>
+                    {detail.locations.length === 0 ? (
+                      <p className="text-xs text-slate-400">Sin ubicaciones asignadas</p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {detail.locations.map((loc) => (
+                          <div
+                            key={loc.id}
+                            className="flex items-center justify-between px-3 py-2 rounded-lg"
+                            style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
+                          >
+                            <div>
+                              <div className="text-xs font-medium" style={{ color: brand.navy[800] }}>
+                                {loc.warehouse.name}
+                              </div>
+                              <div className="text-[10px]" style={{ color: '#94A3B8' }}>
+                                {loc.locationCode}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div
+                                className="text-sm font-bold"
+                                style={{
+                                  color: loc.quantityOnHand === 0
+                                    ? brand.semantic.danger
+                                    : brand.semantic.success,
+                                }}
+                              >
+                                {loc.quantityOnHand}
+                              </div>
+                              {loc.reservedQuantity > 0 && (
+                                <div className="text-[10px]" style={{ color: '#94A3B8' }}>
+                                  {loc.reservedQuantity} reserv.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Últimos movimientos */}
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <History size={13} style={{ color: '#94A3B8' }} />
+                      <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>
+                        Últimos 20 Movimientos
+                      </span>
+                    </div>
+                    {detail.movements.length === 0 ? (
+                      <p className="text-xs text-slate-400">Sin movimientos registrados</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {detail.movements.map((m) => (
+                          <div
+                            key={m.id}
+                            className="flex items-center justify-between px-3 py-2 rounded-lg text-xs"
+                            style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
+                          >
+                            <div>
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold mr-1.5"
+                                style={{
+                                  backgroundColor: m.quantity > 0 ? '#F0FDF4' : '#FEF2F2',
+                                  color: m.quantity > 0 ? brand.semantic.success : brand.semantic.danger,
+                                }}
+                              >
+                                {m.movementType}
+                              </span>
+                              <span style={{ color: '#64748B' }}>
+                                {m.user.name ?? m.user.email}
+                              </span>
+                            </div>
+                            <div className="text-right">
+                              <span
+                                className="font-bold"
+                                style={{ color: m.quantity > 0 ? brand.semantic.success : brand.semantic.danger }}
+                              >
+                                {m.quantity > 0 ? '+' : ''}{m.quantity}
+                              </span>
+                              <div style={{ color: '#CBD5E1', fontSize: '10px' }}>
+                                {new Date(m.createdAt).toLocaleDateString('es-PR', {
+                                  month: 'short', day: 'numeric',
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {/* Footer */}
+            {detail && (
+              <div className="px-5 py-3 border-t flex gap-2" style={{ borderColor: '#E2E8F0' }}>
+                <button
+                  onClick={() => {
+                    setForm({
+                      sku: detail.sku,
+                      name: detail.name,
+                      categoryId: detail.categoryId,
+                      unitCost: String(detail.unitCost),
+                      retailPrice: String(detail.retailPrice),
+                      wholesalePrice: String(detail.wholesalePrice),
+                      minStock: String(detail.minStock),
+                      description: detail.description ?? '',
+                      color: detail.color ?? '',
+                      model: detail.model ?? '',
+                      type: detail.type ?? '',
+                    });
+                    setEditId(detail.id);
+                    setModal('edit');
+                    setDetailId(null);
+                  }}
+                  className="flex-1 py-2 rounded-xl text-sm font-medium border border-slate-200 hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                  style={{ color: brand.navy[800] }}
+                >
+                  <Edit2 size={13} /> Editar
+                </button>
+                {detail.isActive && (
+                  <button
+                    onClick={() => {
+                      setDeactivateTarget({ id: detail.id, name: detail.name });
+                      setDetailId(null);
+                    }}
+                    className="flex-1 py-2 rounded-xl text-sm font-medium border border-red-200 hover:bg-red-50 flex items-center justify-center gap-1.5"
+                    style={{ color: '#DC2626' }}
+                  >
+                    <Archive size={13} /> Archivar
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Modal — Confirmar Desactivación */}
+      {deactivateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/30"
+            style={{ backdropFilter: 'blur(4px)' }}
+            onClick={() => setDeactivateTarget(null)}
+          />
+          <div
+            className="relative w-full max-w-sm mx-4 rounded-2xl p-6"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ backgroundColor: '#FEF2F2' }}
+              >
+                <Archive size={20} style={{ color: '#DC2626' }} />
+              </div>
+              <div>
+                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
+                  Archivar Producto
+                </h2>
+                <p className="text-xs" style={{ color: '#94A3B8' }}>Esta acción es reversible desde base de datos</p>
+              </div>
+            </div>
+
+            <p className="text-sm mb-5" style={{ color: '#475569' }}>
+              ¿Marcar como inactivo{' '}
+              <span className="font-semibold" style={{ color: brand.navy[950] }}>
+                {deactivateTarget.name}
+              </span>
+              ? El producto desaparecerá del inventario activo. El historial de movimientos se preserva.
+            </p>
+
+            {error && (
+              <div className="mb-3 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setDeactivateTarget(null); setError(''); }}
+                className="flex-1 py-2.5 rounded-xl text-sm border hover:bg-slate-50"
+                style={{ color: '#64748B' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => deactivate.mutate(deactivateTarget.id)}
+                disabled={deactivate.isPending}
+                className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ backgroundColor: '#DC2626' }}
+              >
+                {deactivate.isPending ? 'Archivando...' : 'Sí, Archivar'}
               </button>
             </div>
           </div>
