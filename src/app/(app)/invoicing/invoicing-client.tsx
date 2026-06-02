@@ -267,7 +267,7 @@ export function InvoicingClient({ role }: { role: string }) {
   );
   const { data: arAging } = trpc.invoicing.arAging.useQuery(undefined, { enabled: activeTab === 'ar' });
 
-  const taxRate = sysConfig?.ivu_rate ? parseFloat(sysConfig.ivu_rate) : 0.115;
+  const taxRate = sysConfig?.TAX_RATE ? parseFloat(sysConfig.TAX_RATE) : 0.115;
 
   // Mutations
   const createMutation = trpc.invoicing.create.useMutation({

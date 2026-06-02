@@ -242,10 +242,17 @@ export function InvoicePdf({ invoice }: { invoice: InvoiceData }) {
               <Text style={s.totalLabel}>Subtotal</Text>
               <Text style={s.totalValue}>{fmt(invoice.subtotal)}</Text>
             </View>
-            <View style={s.totalRow}>
-              <Text style={s.totalLabel}>IVU ({(Number(invoice.taxRate) * 100).toFixed(1)}%)</Text>
-              <Text style={s.totalValue}>{fmt(invoice.taxAmount)}</Text>
-            </View>
+            {Number(invoice.taxRate) > 0 ? (
+              <View style={s.totalRow}>
+                <Text style={s.totalLabel}>IVU ({(Number(invoice.taxRate) * 100).toFixed(1)}%)</Text>
+                <Text style={s.totalValue}>{fmt(invoice.taxAmount)}</Text>
+              </View>
+            ) : (
+              <View style={s.totalRow}>
+                <Text style={[s.totalLabel, { color: C.slate400 }]}>IVU</Text>
+                <Text style={[s.totalValue, { color: C.slate400 }]}>Exento</Text>
+              </View>
+            )}
             <View style={s.totalDivider} />
             <View style={s.grandBox}>
               <Text style={s.grandLabel}>TOTAL</Text>

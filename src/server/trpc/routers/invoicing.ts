@@ -204,9 +204,12 @@ export const invoicingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { items, type, ...rest } = input;
 
-      // Leer tasa configurada en DB — ignora taxRate del cliente para evitar manipulación
+      // Tasa IVU: si el cliente envía 0 → exento (se respeta).
+      // Cualquier valor no-cero → se sustituye por la tasa configurada en systemConfig
+      // para que el frontend no pueda manipular la tasa (solo puede habilitarla o eximirla).
       const taxConfig = await ctx.db.systemConfig.findUnique({ where: { key: 'TAX_RATE' } });
-      const taxRate = taxConfig ? Number(taxConfig.value) : 0.115;
+      const configuredRate = taxConfig ? Number(taxConfig.value) : 0.115;
+      const taxRate = input.taxRate === 0 ? 0 : configuredRate;
 
       const { itemsData, subtotal, taxRateDecimal, taxAmount, total } = calcInvoiceTotals(
         items,
@@ -951,6 +954,7 @@ export const invoicingRouter = createTRPCRouter({
     .input(
       z.object({
         quoteId: z.string().cuid(),
+        taxExempt: z.boolean().default(false),
         items: z
           .array(
             z.object({
@@ -1048,7 +1052,11 @@ export const invoicingRouter = createTRPCRouter({
         (sum, i) => sum.add(i.lineTotal),
         toDecimal(0)
       );
-      const taxRateDecimal = toDecimal(0.115);
+      // Bug-fix: usar tasa de systemConfig en vez de hardcodear 0.115.
+      // taxExempt=true permite conversiones exentas de IVU.
+      const taxCfg = await ctx.db.systemConfig.findUnique({ where: { key: 'TAX_RATE' } });
+      const appliedTaxRate = input.taxExempt ? 0 : (taxCfg ? Number(taxCfg.value) : 0.115);
+      const taxRateDecimal = toDecimal(appliedTaxRate);
       const taxAmount = subtotal.mul(taxRateDecimal);
       const total = subtotal.add(taxAmount);
 
