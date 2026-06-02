@@ -1,18 +1,32 @@
 'use client';
 
+import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers } from 'lucide-react';
+import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const PIE_COLORS = [brand.orange[500], brand.navy[700], brand.orange[400], brand.navy[600], '#059669'];
 
+const MOV_LABELS: Record<string, string> = {
+  IN: 'Entrada', OUT: 'Salida', TRANSFER: 'Transferencia',
+  ADJUSTMENT: 'Ajuste', RETURN: 'Devolución', DAMAGE: 'Daño',
+};
+const MOV_COLORS: Record<string, { bg: string; text: string }> = {
+  IN: { bg: '#F0FDF4', text: '#16A34A' }, OUT: { bg: '#FEF2F2', text: '#DC2626' },
+  TRANSFER: { bg: '#EFF6FF', text: '#1D4ED8' }, ADJUSTMENT: { bg: '#FEF9C3', text: '#854D0E' },
+  RETURN: { bg: '#F0FDF4', text: '#15803D' }, DAMAGE: { bg: '#FFF7ED', text: '#C2410C' },
+};
+
 export function ReportsClient() {
+  const [activeTab, setActiveTab] = useState<'summary' | 'movements'>('summary');
+  const [movPage, setMovPage] = useState(1);
+  const [movType, setMovType] = useState('');
   const { data: kpis } = trpc.dashboard.kpis.useQuery();
   const { data: salesData } = trpc.dashboard.salesByDay.useQuery({ days: 30 });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
@@ -22,6 +36,35 @@ export function ReportsClient() {
   const { data: customers } = trpc.customers.list.useQuery({ pageSize: 200 });
   const { data: lama3 } = trpc.stock.getTotalByLama.useQuery({ lama: '3' });
   const { data: lama4 } = trpc.stock.getTotalByLama.useQuery({ lama: '4' });
+  const { data: movData } = trpc.movements.list.useQuery({
+    movementType: movType as 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'RETURN' | 'DAMAGE' | undefined || undefined,
+    page: movPage,
+    pageSize: 30,
+  });
+
+  function downloadCSV() {
+    const movements = movData?.movements ?? [];
+    const header = ['Fecha', 'Tipo', 'Producto', 'SKU', 'Cantidad', 'Almacén', 'Ubicación', 'Referencia', 'Usuario'];
+    const rows = movements.map((m) => [
+      new Date(m.createdAt).toLocaleDateString('es-PR'),
+      MOV_LABELS[m.movementType] ?? m.movementType,
+      m.product.name,
+      m.product.sku,
+      m.quantity,
+      m.location.warehouse.name,
+      m.location.locationCode,
+      m.referenceId ?? '',
+      m.user.name ?? m.user.email,
+    ]);
+    const csv = [header, ...rows].map((r) => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `movimientos-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const totalRevenue = summary?.totalRevenue ?? 0;
   const pendingBalance = summary?.pendingBalance ?? 0;
@@ -59,12 +102,109 @@ export function ReportsClient() {
     },
   ];
 
+  const movTotalPages = Math.ceil((movData?.total ?? 0) / 30);
+
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold" style={{ color: brand.navy[950] }}>Reportes</h1>
         <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>Inteligencia de negocio · The Builder's House</p>
       </div>
+
+      {/* Tabs */}
+      <div style={glass} className="rounded-2xl p-1.5 flex gap-1">
+        {([{ id: 'summary', label: 'Resumen & KPIs' }, { id: 'movements', label: 'Ledger de Movimientos' }] as const).map((t) => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all"
+            style={activeTab === t.id ? { backgroundColor: brand.orange[500], color: '#FFFFFF' } : { color: '#64748B' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── TAB: Ledger de Movimientos ── */}
+      {activeTab === 'movements' && (
+        <div style={glass} className="rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+            <span className="font-semibold text-sm flex-1" style={{ color: brand.navy[950] }}>
+              Ledger de Movimientos · {movData?.total ?? 0} registros
+            </span>
+            <select value={movType} onChange={(e) => { setMovType(e.target.value); setMovPage(1); }}
+              className="text-xs px-3 py-1.5 rounded-lg border bg-white/60 outline-none" style={{ color: brand.navy[800] }}>
+              <option value="">Todos los tipos</option>
+              {Object.entries(MOV_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <button onClick={downloadCSV} disabled={!movData?.movements.length}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border hover:bg-slate-50 disabled:opacity-40 transition-all"
+              style={{ color: brand.navy[800] }}>
+              <Download size={13} /> Exportar CSV
+            </button>
+          </div>
+
+          {(movData?.movements ?? []).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <Layers size={36} style={{ color: '#CBD5E1' }} />
+              <p className="text-sm text-slate-400">No hay movimientos con los filtros seleccionados</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                      {['Fecha', 'Tipo', 'Producto', 'SKU', 'Cant.', 'Almacén', 'Ubicación', 'Referencia', 'Usuario'].map((h) => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movData?.movements.map((m, i) => {
+                      const col = MOV_COLORS[m.movementType] ?? { bg: '#F1F5F9', text: '#475569' };
+                      return (
+                        <tr key={m.id} style={{
+                          borderBottom: i < (movData?.movements.length ?? 0) - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none',
+                          backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
+                        }}>
+                          <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">{formatDate(m.createdAt)}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ backgroundColor: col.bg, color: col.text }}>
+                              {MOV_LABELS[m.movementType] ?? m.movementType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs font-medium" style={{ color: brand.navy[950] }}>{m.product.name}</td>
+                          <td className="px-4 py-2.5 font-mono text-[10px]" style={{ color: '#94A3B8' }}>{m.product.sku}</td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                              style={m.quantity >= 0 ? { backgroundColor: '#F0FDF4', color: '#16A34A' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                              {m.quantity >= 0 ? '+' : ''}{m.quantity}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-xs" style={{ color: brand.navy[800] }}>{m.location.warehouse.name}</td>
+                          <td className="px-4 py-2.5 text-xs text-slate-500">{m.location.locationCode}</td>
+                          <td className="px-4 py-2.5"><span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{m.referenceId ?? '—'}</span></td>
+                          <td className="px-4 py-2.5 text-xs text-slate-500">{m.user.name ?? m.user.email}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {movTotalPages > 1 && (
+                <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid rgba(10,22,40,0.06)' }}>
+                  <span className="text-xs text-slate-400">Página {movPage} de {movTotalPages} · {movData?.total} registros</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setMovPage((p) => Math.max(1, p - 1))} disabled={movPage === 1} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronLeft size={14} /></button>
+                    <button onClick={() => setMovPage((p) => Math.min(movTotalPages, p + 1))} disabled={movPage >= movTotalPages} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronRight size={14} /></button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: Resumen (existing content) ── */}
+      {activeTab === 'summary' && <>
 
       {/* KPI Row */}
       <div className="grid grid-cols-4 gap-4">
@@ -288,6 +428,7 @@ export function ReportsClient() {
           </div>
         </div>
       )}
+      </> /* end summary tab */ }
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Plus, Search, Users, X, Edit2, ChevronLeft, ChevronRight, Archive, RefreshCw } from 'lucide-react';
+import { Plus, Search, Users, X, Edit2, ChevronLeft, ChevronRight, Archive, RefreshCw, Receipt } from 'lucide-react';
 
 const glass = {
   backgroundColor: 'rgba(255,255,255,0.72)',
@@ -105,6 +105,23 @@ export function CustomersClient() {
   const customers = data?.customers ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / 20);
+
+  // Facturas por cliente
+  const [invoiceCustomerId, setInvoiceCustomerId] = useState<string | null>(null);
+  const { data: customerInvoices } = trpc.invoicing.list.useQuery(
+    { customerId: invoiceCustomerId ?? '', pageSize: 50 },
+    { enabled: !!invoiceCustomerId },
+  );
+
+  const INV_STATUS: Record<string, { label: string; bg: string; text: string }> = {
+    ISSUED:  { label: 'Emitida', bg: '#EFF6FF', text: '#1D4ED8' },
+    PAID:    { label: 'Pagada', bg: '#F0FDF4', text: '#166534' },
+    PARTIAL: { label: 'Parcial', bg: '#FEF9C3', text: '#854D0E' },
+    VOIDED:  { label: 'Anulada', bg: '#FEF2F2', text: '#991B1B' },
+    CONVERTED: { label: 'Convertida', bg: '#F1F5F9', text: '#475569' },
+    DRAFT:   { label: 'Borrador', bg: '#F1F5F9', text: '#475569' },
+    PENDING_AUTHORIZATION: { label: 'Pend. Aut.', bg: '#FFF7ED', text: '#C2410C' },
+  };
 
   return (
     <div className="space-y-5">
@@ -213,6 +230,13 @@ export function CustomersClient() {
                           title="Editar cliente"
                         >
                           <Edit2 size={14} style={{ color: brand.navy[600] }} />
+                        </button>
+                        <button
+                          onClick={() => setInvoiceCustomerId(c.id)}
+                          className="p-1.5 rounded-lg hover:bg-orange-50"
+                          title="Ver facturas del cliente"
+                        >
+                          <Receipt size={14} style={{ color: brand.orange[500] }} />
                         </button>
                         <button
                           onClick={() => setReconcileTarget({ id: c.id, name: c.name })}
@@ -434,6 +458,98 @@ export function CustomersClient() {
                 {create.isPending || update.isPending ? 'Guardando...' : modal === 'create' ? 'Crear Cliente' : 'Guardar Cambios'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DRAWER: Facturas del Cliente ── */}
+      {invoiceCustomerId && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={() => setInvoiceCustomerId(null)} />
+          <div className="relative w-full max-w-2xl h-screen flex flex-col"
+            style={{ background: 'rgba(255,255,255,0.98)', boxShadow: '-8px 0 40px rgba(10,22,40,0.15)' }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div>
+                <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
+                  Facturas del Cliente
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {customers.find((c) => c.id === invoiceCustomerId)?.name ?? '—'}
+                </p>
+              </div>
+              <button onClick={() => setInvoiceCustomerId(null)}
+                className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
+                <X size={16} style={{ color: '#94A3B8' }} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {!customerInvoices ? (
+                <div className="flex items-center justify-center py-20 text-slate-400 text-sm">Cargando...</div>
+              ) : customerInvoices.invoices.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <Receipt size={40} style={{ color: '#CBD5E1' }} />
+                  <p className="text-slate-400 text-sm">No hay facturas para este cliente</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {customerInvoices.invoices.map((inv) => {
+                    const st = INV_STATUS[inv.status] ?? { label: inv.status, bg: '#F1F5F9', text: '#475569' };
+                    const invAny = inv as unknown as { type: string };
+                    return (
+                      <div key={inv.id} className="rounded-xl border border-slate-100 p-4 hover:border-slate-200 transition-colors">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono text-xs font-bold" style={{ color: brand.orange[600] }}>{inv.invoiceNumber}</span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ backgroundColor: st.bg, color: st.text }}>{st.label}</span>
+                              <span className="text-[10px] text-slate-400">{invAny.type === 'QUOTE' ? 'Cotización' : invAny.type === 'CREDIT_NOTE' ? 'Nota de Crédito' : 'Factura'}</span>
+                            </div>
+                            <div className="text-xs text-slate-400">{formatDate(inv.createdAt)}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-sm" style={{ color: brand.navy[950] }}>{formatCurrency(Number(inv.total))}</div>
+                            {Number(inv.paidAmount) > 0 && (
+                              <div className="text-xs" style={{ color: '#16A34A' }}>
+                                Pagado: {formatCurrency(Number(inv.paidAmount))}
+                              </div>
+                            )}
+                            {Number(inv.total) - Number(inv.paidAmount) > 0.01 && inv.status !== 'VOIDED' && (
+                              <div className="text-xs" style={{ color: '#DC2626' }}>
+                                Pendiente: {formatCurrency(Number(inv.total) - Number(inv.paidAmount))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-50">
+                          <span className="text-xs text-slate-400">
+                            {(inv as unknown as { _count: { items: number } })._count.items} ítem(s)
+                          </span>
+                          <a href={`/api/print/invoice/${inv.id}`} target="_blank" rel="noreferrer"
+                            className="text-xs font-medium flex items-center gap-1" style={{ color: brand.orange[500] }}>
+                            <Receipt size={11} /> Ver PDF
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {customerInvoices && customerInvoices.total > 0 && (
+              <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-xs text-slate-400">{customerInvoices.total} documentos en total</span>
+                <span className="text-xs font-semibold" style={{ color: brand.navy[950] }}>
+                  Total facturado: {formatCurrency(
+                    customerInvoices.invoices.reduce((s, inv) => s + Number(inv.total), 0)
+                  )}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

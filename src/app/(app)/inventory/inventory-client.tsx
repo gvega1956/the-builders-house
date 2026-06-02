@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatDate } from '@/lib/utils';
 import {
   Plus, Search, AlertTriangle, Package, X, ChevronLeft, ChevronRight,
   Edit2, Filter, PackagePlus, ArrowLeftRight, Printer, ChevronDown,
-  Eye, Archive, History, MapPin,
+  Eye, Archive, History, MapPin, Warehouse, BarChart3,
 } from 'lucide-react';
+
+type InventoryTab = 'catalog' | 'by-location' | 'movements';
 
 const glass = {
   backgroundColor: 'rgba(255,255,255,0.72)',
@@ -30,6 +32,7 @@ const emptyForm: ProductForm = {
 };
 
 export function InventoryClient() {
+  const [activeTab, setActiveTab] = useState<'catalog' | 'by-location' | 'movements'>('catalog');
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [lowStock, setLowStock] = useState(false);
@@ -59,6 +62,19 @@ export function InventoryClient() {
 
   const { data: cats } = trpc.settings.categories.useQuery();
   const utils = trpc.useUtils();
+
+  // Tabs: Por Sucursal
+  const { data: whSummary } = trpc.stock.warehousesSummary.useQuery();
+  const { data: warehouses } = trpc.settings.warehouses.useQuery();
+
+  // Tabs: Movimientos
+  const [movPage, setMovPage] = useState(1);
+  const [movType, setMovType] = useState('');
+  const { data: movData } = trpc.movements.list.useQuery({
+    movementType: movType as 'IN' | 'OUT' | 'TRANSFER' | 'ADJUSTMENT' | 'RETURN' | 'DAMAGE' | undefined || undefined,
+    page: movPage,
+    pageSize: 25,
+  });
 
   const create = trpc.products.create.useMutation({
     onSuccess: () => { refetch(); closeModal(); },
@@ -285,17 +301,215 @@ export function InventoryClient() {
     return statusColors.ok!;
   }
 
+  const MOV_LABELS: Record<string, string> = {
+    IN: 'Entrada', OUT: 'Salida', TRANSFER: 'Transferencia',
+    ADJUSTMENT: 'Ajuste', RETURN: 'Devolución', DAMAGE: 'Daño',
+  };
+  const MOV_COLORS: Record<string, { bg: string; text: string }> = {
+    IN: { bg: '#F0FDF4', text: '#16A34A' }, OUT: { bg: '#FEF2F2', text: '#DC2626' },
+    TRANSFER: { bg: '#EFF6FF', text: '#1D4ED8' }, ADJUSTMENT: { bg: '#FEF9C3', text: '#854D0E' },
+    RETURN: { bg: '#F0FDF4', text: '#15803D' }, DAMAGE: { bg: '#FFF7ED', text: '#C2410C' },
+  };
+
   return (
     <div className="space-y-5">
-      {/* Header */}
+      {/* Header + Tabs */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold" style={{ color: brand.navy[950] }}>Inventario</h1>
+            <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>
+              {total} productos · {data?.products.filter((p) => p.totalStock <= p.minStock).length ?? 0} con stock bajo
+            </p>
+          </div>
+        </div>
+        {/* Tab selector */}
+        <div style={glass} className="rounded-2xl p-1.5 flex gap-1 mb-4">
+          {([
+            { id: 'catalog', label: 'Catálogo de Productos' },
+            { id: 'by-location', label: 'Stock por Sucursal' },
+            { id: 'movements', label: 'Movimientos' },
+          ] as const).map((t) => (
+            <button key={t.id} onClick={() => setActiveTab(t.id)}
+              className="flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all"
+              style={activeTab === t.id
+                ? { backgroundColor: brand.orange[500], color: '#FFFFFF' }
+                : { color: '#64748B' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── TAB: Stock por Sucursal ── */}
+      {activeTab === 'by-location' && (
+        <div className="space-y-4">
+          {/* KPI cards */}
+          {whSummary && (
+            <div className="grid grid-cols-2 gap-4">
+              {whSummary.map((wh) => (
+                <div key={wh.id} style={glass} className="rounded-2xl p-5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ backgroundColor: brand.orange[50] }}>
+                      <MapPin size={18} style={{ color: brand.orange[500] }} />
+                    </div>
+                    <div>
+                      <div className="font-bold text-base" style={{ color: brand.navy[950] }}>{wh.name}</div>
+                      <div className="text-xs text-slate-400">{wh.skuCount} SKUs · {wh.totalUnits.toLocaleString()} unidades</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="p-2 rounded-xl" style={{ background: 'rgba(10,22,40,0.03)' }}>
+                      <div className="text-lg font-bold" style={{ color: brand.navy[950] }}>{wh.totalUnits.toLocaleString()}</div>
+                      <div className="text-[10px] text-slate-400">Unidades</div>
+                    </div>
+                    <div className="p-2 rounded-xl" style={{ background: 'rgba(10,22,40,0.03)' }}>
+                      <div className="text-lg font-bold" style={{ color: brand.navy[950] }}>{wh.skuCount}</div>
+                      <div className="text-[10px] text-slate-400">SKUs</div>
+                    </div>
+                    <div className="p-2 rounded-xl" style={{ background: 'rgba(10,22,40,0.03)' }}>
+                      <div className="text-lg font-bold" style={{ color: '#DC2626' }}>{(wh as unknown as { emptyLocations?: number }).emptyLocations ?? 0}</div>
+                      <div className="text-[10px] text-slate-400">Vacíos</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Detalle por almacén */}
+          {warehouses?.map((wh) => {
+            const locs = wh.locations as unknown as Array<{
+              id: string; locationCode: string; quantityOnHand: number; reservedQuantity: number;
+              productId: string; product: { name: string; sku: string };
+            }>;
+            return (
+              <div key={wh.id} style={glass} className="rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)', background: `${brand.navy[950]}08` }}>
+                  <span className="font-semibold text-sm" style={{ color: brand.navy[950] }}>{wh.name}</span>
+                  <span className="text-xs text-slate-400">{locs.length} ubicaciones</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.06)' }}>
+                        {['Ubicación', 'Producto', 'SKU', 'Disponible', 'Reservado', 'Estado'].map((h) => (
+                          <th key={h} className="text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {locs.map((loc, i) => (
+                        <tr key={loc.id} style={{
+                          borderBottom: i < locs.length - 1 ? '1px solid rgba(10,22,40,0.04)' : 'none',
+                          backgroundColor: loc.quantityOnHand === 0 ? 'rgba(220,38,38,0.03)' : i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.01)',
+                        }}>
+                          <td className="px-4 py-2.5 font-mono text-xs font-bold" style={{ color: brand.orange[600] }}>{loc.locationCode}</td>
+                          <td className="px-4 py-2.5 text-xs font-medium" style={{ color: brand.navy[950] }}>{loc.product.name}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs" style={{ color: '#94A3B8' }}>{loc.product.sku}</td>
+                          <td className="px-4 py-2.5 text-center font-bold" style={{ color: loc.quantityOnHand === 0 ? '#DC2626' : brand.navy[900] }}>{loc.quantityOnHand}</td>
+                          <td className="px-4 py-2.5 text-center text-slate-400 text-xs">{loc.reservedQuantity}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                              style={loc.quantityOnHand === 0 ? { backgroundColor: '#FEF2F2', color: '#991B1B' } : { backgroundColor: '#F0FDF4', color: '#166534' }}>
+                              {loc.quantityOnHand === 0 ? 'Vacío' : 'Con Stock'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── TAB: Movimientos ── */}
+      {activeTab === 'movements' && (
+        <div style={glass} className="rounded-2xl overflow-hidden">
+          {/* Filtros */}
+          <div className="px-5 py-3 flex items-center gap-3" style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+            <span className="text-sm font-semibold" style={{ color: brand.navy[950] }}>Historial de Movimientos</span>
+            <span className="text-xs text-slate-400 flex-1">{movData?.total ?? 0} registros</span>
+            <select value={movType} onChange={(e) => { setMovType(e.target.value); setMovPage(1); }}
+              className="text-xs px-3 py-1.5 rounded-lg border bg-white/60 outline-none" style={{ color: brand.navy[800] }}>
+              <option value="">Todos los tipos</option>
+              {Object.entries(MOV_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+          </div>
+          {(movData?.movements ?? []).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <History size={36} style={{ color: '#CBD5E1' }} />
+              <p className="text-sm text-slate-400">No hay movimientos</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
+                      {['Tipo', 'Producto', 'Cant.', 'Ubicación', 'Referencia', 'Usuario', 'Fecha'].map((h) => (
+                        <th key={h} className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movData?.movements.map((m, i) => {
+                      const col = MOV_COLORS[m.movementType] ?? { bg: '#F1F5F9', text: '#475569' };
+                      return (
+                        <tr key={m.id} style={{
+                          borderBottom: i < (movData?.movements.length ?? 0) - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none',
+                          backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
+                        }}>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold" style={{ backgroundColor: col.bg, color: col.text }}>
+                              {MOV_LABELS[m.movementType] ?? m.movementType}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="text-xs font-medium" style={{ color: brand.navy[950] }}>{m.product.name}</div>
+                            <div className="font-mono text-[10px]" style={{ color: '#94A3B8' }}>{m.product.sku}</div>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold"
+                              style={m.quantity >= 0 ? { backgroundColor: '#F0FDF4', color: '#16A34A' } : { backgroundColor: '#FEF2F2', color: '#DC2626' }}>
+                              {m.quantity >= 0 ? '+' : ''}{m.quantity}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs">
+                            <div style={{ color: brand.navy[800] }}>{m.location.warehouse.name}</div>
+                            <div style={{ color: '#94A3B8' }}>{m.location.locationCode}</div>
+                          </td>
+                          <td className="px-4 py-3"><span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ backgroundColor: '#F1F5F9', color: '#475569' }}>{m.referenceId ?? '—'}</span></td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{m.user.name ?? m.user.email}</td>
+                          <td className="px-4 py-3 text-xs text-slate-400">{new Date(m.createdAt).toLocaleDateString('es-PR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {(movData?.total ?? 0) > 25 && (
+                <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid rgba(10,22,40,0.06)' }}>
+                  <span className="text-xs text-slate-400">Página {movPage} / {Math.ceil((movData?.total ?? 0) / 25)}</span>
+                  <div className="flex gap-2">
+                    <button onClick={() => setMovPage((p) => Math.max(1, p - 1))} disabled={movPage === 1} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronLeft size={14} /></button>
+                    <button onClick={() => setMovPage((p) => Math.min(Math.ceil((movData?.total ?? 0) / 25), p + 1))} disabled={movPage >= Math.ceil((movData?.total ?? 0) / 25)} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronRight size={14} /></button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── TAB: Catálogo (existing content starts here) ── */}
+      {activeTab === 'catalog' && <>
+      {/* Header (catalog only) */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: brand.navy[950] }}>
-            Inventario
-          </h1>
-          <p className="text-sm mt-0.5" style={{ color: '#64748B' }}>
-            {total} productos · {data?.products.filter((p) => p.totalStock <= p.minStock).length ?? 0} con stock bajo
-          </p>
+          <p className="text-sm" style={{ color: '#64748B' }}>Vista de catálogo completo</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Print button */}
@@ -1022,6 +1236,7 @@ export function InventoryClient() {
           </div>
         </div>
       )}
+      </> /* end catalog tab */ }
     </div>
   );
 }
