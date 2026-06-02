@@ -241,6 +241,11 @@ export function PurchasesClient() {
                 {orders.map((o, i) => {
                   const st = STATUS_STYLES[o.status] ?? STATUS_STYLES.DRAFT!;
                   const next = STATUS_ORDER[o.status];
+                  const totalOrdered   = (o.items as Array<{ quantityOrdered: number; quantityReceived: number }>)
+                    .reduce((s, it) => s + it.quantityOrdered, 0);
+                  const totalReceived  = (o.items as Array<{ quantityOrdered: number; quantityReceived: number }>)
+                    .reduce((s, it) => s + it.quantityReceived, 0);
+                  const hasPartial     = totalReceived > 0 && totalReceived < totalOrdered;
                   return (
                     <tr key={o.id} style={{
                       borderBottom: i < orders.length - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none',
@@ -249,7 +254,15 @@ export function PurchasesClient() {
                       <td className="px-4 py-3 font-mono text-xs font-semibold" style={{ color: brand.navy[700] }}>{o.poNumber}</td>
                       <td className="px-4 py-3 font-medium" style={{ color: brand.navy[950] }}>{o.supplier.name}</td>
                       <td className="px-4 py-3 text-slate-500">{o.supplier.country}</td>
-                      <td className="px-4 py-3 text-center" style={{ color: brand.navy[800] }}>{o._count.items}</td>
+                      <td className="px-4 py-3">
+                        <div className="text-center" style={{ color: brand.navy[800] }}>{o._count.items}</div>
+                        {hasPartial && (
+                          <div className="text-[10px] text-center mt-0.5 font-semibold"
+                            style={{ color: '#D97706' }}>
+                            {totalReceived}/{totalOrdered} u. recibidas
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-semibold" style={{ color: brand.navy[950] }}>{formatCurrency(Number(o.totalLandedCost))}</td>
                       <td className="px-4 py-3">
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
@@ -461,29 +474,50 @@ export function PurchasesClient() {
               </span>
             </div>
 
+            {/* Partial receipt banner */}
+            {detail.status === 'IN_TRANSIT' && detail.items.some((it) => it.quantityReceived > 0) && (
+              <div className="mb-3 px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2"
+                style={{ backgroundColor: '#FEF9C3', color: '#854D0E' }}>
+                <span>⚡</span>
+                <span>
+                  Recepción parcial en curso —{' '}
+                  {detail.items.filter((it) => it.quantityReceived >= it.quantityOrdered).length} de {detail.items.length} ítems completos
+                </span>
+              </div>
+            )}
+
             <table className="w-full text-sm mb-4">
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
                   <th className="text-left py-2 text-xs font-semibold text-slate-400">Producto</th>
                   <th className="text-right py-2 text-xs font-semibold text-slate-400">Ordenado</th>
                   <th className="text-right py-2 text-xs font-semibold text-slate-400">Recibido</th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-400">Pendiente</th>
                   <th className="text-right py-2 text-xs font-semibold text-slate-400">Costo USD</th>
                 </tr>
               </thead>
               <tbody>
-                {detail.items.map((item) => (
-                  <tr key={item.id} style={{ borderBottom: '1px solid rgba(10,22,40,0.05)' }}>
-                    <td className="py-2" style={{ color: brand.navy[900] }}>
-                      {item.product.name}
-                      <div className="text-xs text-slate-400 font-mono">{item.product.sku}</div>
-                    </td>
-                    <td className="py-2 text-right" style={{ color: brand.navy[800] }}>{item.quantityOrdered}</td>
-                    <td className="py-2 text-right" style={{ color: item.quantityReceived < item.quantityOrdered ? '#D97706' : '#16A34A' }}>
-                      {item.quantityReceived}
-                    </td>
-                    <td className="py-2 text-right" style={{ color: brand.navy[800] }}>{formatCurrency(Number(item.unitCostUsd))}</td>
-                  </tr>
-                ))}
+                {detail.items.map((item) => {
+                  const pending = item.quantityOrdered - item.quantityReceived;
+                  return (
+                    <tr key={item.id} style={{ borderBottom: '1px solid rgba(10,22,40,0.05)' }}>
+                      <td className="py-2" style={{ color: brand.navy[900] }}>
+                        {item.product.name}
+                        <div className="text-xs text-slate-400 font-mono">{item.product.sku}</div>
+                      </td>
+                      <td className="py-2 text-right" style={{ color: brand.navy[800] }}>{item.quantityOrdered}</td>
+                      <td className="py-2 text-right font-semibold"
+                        style={{ color: item.quantityReceived < item.quantityOrdered ? '#D97706' : '#16A34A' }}>
+                        {item.quantityReceived}
+                      </td>
+                      <td className="py-2 text-right font-semibold"
+                        style={{ color: pending > 0 ? '#DC2626' : '#16A34A' }}>
+                        {pending > 0 ? pending : '✓'}
+                      </td>
+                      <td className="py-2 text-right" style={{ color: brand.navy[800] }}>{formatCurrency(Number(item.unitCostUsd))}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 

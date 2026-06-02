@@ -40,6 +40,7 @@ export const purchasesRouter = createTRPCRouter({
           include: {
             supplier: { select: { name: true, country: true } },
             _count: { select: { items: true } },
+            items: { select: { quantityOrdered: true, quantityReceived: true } },
           },
           orderBy: { createdAt: 'desc' },
           skip,
