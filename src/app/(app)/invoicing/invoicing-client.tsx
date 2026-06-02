@@ -9,7 +9,7 @@ import {
   Plus, Search, Receipt, X, ChevronLeft, ChevronRight,
   Eye, Trash2, DollarSign, ShieldCheck, Printer,
   Building2, AlertCircle, CheckCircle2,
-  FileText, TrendingUp, Clock, AlertTriangle, Pencil,
+  FileText, TrendingUp, Clock, AlertTriangle, Pencil, ArrowRight,
 } from 'lucide-react';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -214,7 +214,9 @@ export function InvoicingClient({ role }: { role: string }) {
   const [arCustomerId, setArCustomerId] = useState('');
 
   // Modal state
-  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'detail' | 'payment' | 'void' | 'authorize'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'detail' | 'payment' | 'void' | 'authorize' | 'convertQuote'>('none');
+  const [convertLocations, setConvertLocations] = useState<Record<string, string>>({});
+  const [convertTaxExempt, setConvertTaxExempt] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editInvoiceId, setEditInvoiceId] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -297,6 +299,11 @@ export function InvoicingClient({ role }: { role: string }) {
     onError: (e) => setError(e.message),
   });
 
+  const convertQuoteMutation = trpc.invoicing.convertQuoteToInvoice.useMutation({
+    onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
   useEffect(() => {
     if (!editInvoiceData || modal !== 'edit') return;
     const inv = editInvoiceData;
@@ -331,6 +338,7 @@ export function InvoicingClient({ role }: { role: string }) {
     setApplyIvu(true); setPaymentMode('CONTADO'); setCreditDays(30);
     setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef('');
     setVoidReason(''); setAuthNotes('');
+    setConvertLocations({}); setConvertTaxExempt(false);
   }
 
   function addLine() {
@@ -788,6 +796,13 @@ export function InvoicingClient({ role }: { role: string }) {
                               onClick={() => { setEditInvoiceId(inv.id); setModal('edit'); }}
                               className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar">
                               <Pencil size={14} style={{ color: '#2563EB' }} />
+                            </button>
+                          )}
+                          {(inv as unknown as { type: string }).type === 'QUOTE' && inv.status === 'ISSUED' && (
+                            <button
+                              onClick={() => { setSelectedId(inv.id); setModal('convertQuote'); setConvertLocations({}); setConvertTaxExempt(false); }}
+                              className="p-1.5 rounded-lg hover:bg-orange-50" title="Convertir a Factura">
+                              <ArrowRight size={14} style={{ color: brand.orange[500] }} />
                             </button>
                           )}
                           {(inv.status === 'ISSUED' || inv.status === 'PARTIAL') && (
@@ -1443,6 +1458,91 @@ export function InvoicingClient({ role }: { role: string }) {
                 className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
                 style={{ background: '#DC2626' }}>
                 {voidMutation.isPending ? 'Anulando...' : 'Confirmar Anulación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ CONVERT QUOTE → INVOICE MODAL ══════════════════════════════ */}
+      {modal === 'convertQuote' && detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-lg mx-4 rounded-2xl p-6 max-h-[90vh] overflow-y-auto"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: brand.navy[950] }}>Convertir a Factura</h2>
+                <p className="text-sm text-slate-500">{detail.invoiceNumber} · {detail.customer.name}</p>
+              </div>
+              <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
+            </div>
+            {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+
+            <p className="text-xs text-slate-500 mb-4">
+              Selecciona la ubicación de almacén para cada producto. Los precios acordados en la cotización se heredan automáticamente.
+            </p>
+
+            <div className="space-y-3 mb-4">
+              {detail.items.map((item) => {
+                const locOptions = warehouses?.flatMap((w) =>
+                  (w.locations as unknown as Array<{ id: string; locationCode: string; quantityOnHand: number; productId: string }>)
+                    .filter((l) => l.productId === item.productId)
+                    .map((l) => ({ id: l.id, label: `${w.name} — ${l.locationCode}`, qty: l.quantityOnHand }))
+                ) ?? [];
+                return (
+                  <div key={item.id} className="p-3 rounded-xl border border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: brand.navy[900] }}>{item.product.name}</div>
+                        <div className="text-xs text-slate-400 font-mono">{item.product.sku} · Cant: {item.quantity}</div>
+                      </div>
+                    </div>
+                    <select
+                      value={convertLocations[item.productId] ?? ''}
+                      onChange={(e) => setConvertLocations((prev) => ({ ...prev, [item.productId]: e.target.value }))}
+                      className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs outline-none"
+                      style={{ color: brand.navy[900] }}>
+                      <option value="">— Seleccionar ubicación —</option>
+                      {locOptions.map((l) => (
+                        <option key={l.id} value={l.id}>{l.label} ({l.qty} disp.)</option>
+                      ))}
+                      {locOptions.length === 0 && (
+                        <option disabled>No hay ubicaciones para este producto</option>
+                      )}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 mb-5 p-3 rounded-xl" style={{ background: 'rgba(10,22,40,0.03)' }}>
+              <input type="checkbox" id="convertTax" checked={!convertTaxExempt}
+                onChange={() => setConvertTaxExempt((v) => !v)}
+                className="w-4 h-4 rounded accent-orange-500" />
+              <label htmlFor="convertTax" className="text-sm font-medium cursor-pointer" style={{ color: brand.navy[800] }}>
+                Aplicar IVU ({taxRate * 100}%)
+              </label>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+              <button
+                disabled={convertQuoteMutation.isPending || detail.items.some((i) => !convertLocations[i.productId])}
+                onClick={() => {
+                  convertQuoteMutation.mutate({
+                    quoteId: detail.id,
+                    taxExempt: convertTaxExempt,
+                    items: detail.items.map((i) => ({
+                      productId: i.productId,
+                      locationId: convertLocations[i.productId]!,
+                      quantity: i.quantity,
+                    })),
+                  });
+                }}
+                className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
+                style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+                {convertQuoteMutation.isPending ? 'Convirtiendo...' : 'Convertir a Factura'}
               </button>
             </div>
           </div>

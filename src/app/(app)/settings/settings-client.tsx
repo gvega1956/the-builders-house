@@ -40,16 +40,31 @@ export function SettingsClient() {
   const [editUserRole, setEditUserRole] = useState('VENDOR');
   const [toggleError, setToggleError] = useState<Record<string, string>>({});
 
-  // Categories
+  // Categories — create
   const [catName, setCatName] = useState(''); const [catSlug, setCatSlug] = useState('');
+  // Categories — edit
+  const [editCatId, setEditCatId] = useState('');
+  const [editCatName, setEditCatName] = useState('');
+  const [editCatSlug, setEditCatSlug] = useState('');
 
-  // Warehouses
+  // Warehouses — create
   const [whName, setWhName] = useState(''); const [whAddr, setWhAddr] = useState('');
+  // Warehouses — edit
+  const [editWhId, setEditWhId] = useState('');
+  const [editWhName, setEditWhName] = useState('');
+  const [editWhAddr, setEditWhAddr] = useState('');
 
-  // Suppliers
+  // Suppliers — create
   const [supName, setSupName] = useState(''); const [supCountry, setSupCountry] = useState('DO');
   const [supContact, setSupContact] = useState(''); const [supEmail, setSupEmail] = useState('');
   const [supPhone, setSupPhone] = useState(''); const [supTerms, setSupTerms] = useState('');
+  // Suppliers — edit
+  const [editSupId, setEditSupId] = useState('');
+  const [editSupName, setEditSupName] = useState('');
+  const [editSupContact, setEditSupContact] = useState('');
+  const [editSupEmail, setEditSupEmail] = useState('');
+  const [editSupPhone, setEditSupPhone] = useState('');
+  const [editSupTerms, setEditSupTerms] = useState('');
 
   // Product Locations
   const [plWarehouseId, setPlWarehouseId] = useState('');
@@ -62,11 +77,15 @@ export function SettingsClient() {
   const setConfig = trpc.settings.setSystemConfig.useMutation({ onSuccess: () => refetchConfig() });
 
   const [taxRateInput, setTaxRateInput] = useState('');
+  const [salesTargetInput, setSalesTargetInput] = useState('');
   React.useEffect(() => {
     if (sysConfig?.TAX_RATE && taxRateInput === '') {
       setTaxRateInput((Number(sysConfig.TAX_RATE) * 100).toFixed(2));
     }
-  }, [sysConfig, taxRateInput]);
+    if (sysConfig?.SALES_TARGET && salesTargetInput === '') {
+      setSalesTargetInput(sysConfig.SALES_TARGET);
+    }
+  }, [sysConfig, taxRateInput, salesTargetInput]);
 
   const { data: users, refetch: refetchUsers } = trpc.settings.users.useQuery();
   const { data: categories, refetch: refetchCats } = trpc.settings.categories.useQuery();
@@ -105,6 +124,21 @@ export function SettingsClient() {
     onError: (e) => setError(e.message),
   });
 
+  const updateCat = trpc.settings.updateCategory.useMutation({
+    onSuccess: () => { refetchCats(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const updateWh = trpc.settings.updateWarehouse.useMutation({
+    onSuccess: () => { refetchWh(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const updateSup = trpc.settings.updateSupplier.useMutation({
+    onSuccess: () => { refetchSup(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
   function openEditUser(u: { id: string; name: string; role: string }) {
     setEditUserId(u.id);
     setEditUserName(u.name);
@@ -118,8 +152,11 @@ export function SettingsClient() {
     setUName(''); setUEmail(''); setUPass(''); setURole('VENDOR');
     setEditUserId(''); setEditUserName(''); setEditUserRole('VENDOR');
     setCatName(''); setCatSlug('');
+    setEditCatId(''); setEditCatName(''); setEditCatSlug('');
     setWhName(''); setWhAddr('');
+    setEditWhId(''); setEditWhName(''); setEditWhAddr('');
     setSupName(''); setSupCountry('DO'); setSupContact(''); setSupEmail(''); setSupPhone(''); setSupTerms('');
+    setEditSupId(''); setEditSupName(''); setEditSupContact(''); setEditSupEmail(''); setEditSupPhone(''); setEditSupTerms('');
     setPlWarehouseId(''); setPlWarehouseName(''); setPlProductId(''); setPlCode(''); setPlQty(0);
   }
 
@@ -249,7 +286,7 @@ export function SettingsClient() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(10,22,40,0.08)' }}>
-                {['Nombre', 'Slug', 'Productos', 'Creada'].map((h) => (
+                {['Nombre', 'Slug', 'Productos', 'Creada', ''].map((h) => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-semibold uppercase tracking-wide" style={{ color: '#94A3B8' }}>{h}</th>
                 ))}
               </tr>
@@ -261,6 +298,12 @@ export function SettingsClient() {
                   <td className="px-5 py-3 font-mono text-xs text-slate-400">{c.slug}</td>
                   <td className="px-5 py-3" style={{ color: brand.navy[800] }}>{c._count.products}</td>
                   <td className="px-5 py-3 text-slate-400 text-xs">{formatDate(c.createdAt)}</td>
+                  <td className="px-5 py-3">
+                    <button onClick={() => { setEditCatId(c.id); setEditCatName(c.name); setEditCatSlug(c.slug); setError(''); setModal('editCategory'); }}
+                      className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar categoría">
+                      <Pencil size={13} style={{ color: '#2563EB' }} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -300,12 +343,18 @@ export function SettingsClient() {
                       style={{ backgroundColor: '#F0FDF4', color: '#166534' }}>Activo</span>
                   </td>
                   <td className="px-5 py-3">
-                    <button
-                      onClick={() => { setPlWarehouseId(w.id); setPlWarehouseName(w.name); setModal('location'); }}
-                      className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
-                      style={{ color: brand.navy[700] }}>
-                      <Plus size={12} /> Ubicación
-                    </button>
+                    <div className="flex gap-1">
+                      <button onClick={() => { setEditWhId(w.id); setEditWhName(w.name); setEditWhAddr(w.address ?? ''); setError(''); setModal('editWarehouse'); }}
+                        className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar almacén">
+                        <Pencil size={13} style={{ color: '#2563EB' }} />
+                      </button>
+                      <button
+                        onClick={() => { setPlWarehouseId(w.id); setPlWarehouseName(w.name); setModal('location'); }}
+                        className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
+                        style={{ color: brand.navy[700] }}>
+                        <Plus size={12} /> Ubicación
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -357,6 +406,12 @@ export function SettingsClient() {
                       {s.isActive ? 'Activo' : 'Inactivo'}
                     </span>
                   </td>
+                  <td className="px-5 py-3">
+                    <button onClick={() => { setEditSupId(s.id); setEditSupName(s.name); setEditSupContact(s.contactName ?? ''); setEditSupEmail(s.contactEmail ?? ''); setEditSupPhone(s.contactPhone ?? ''); setEditSupTerms(s.paymentTerms ?? ''); setError(''); setModal('editSupplier'); }}
+                      className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar proveedor">
+                      <Pencil size={13} style={{ color: '#2563EB' }} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -367,6 +422,37 @@ export function SettingsClient() {
       {/* ── FISCAL ── */}
       {tab === 'fiscal' && (
         <div className="space-y-4">
+          <div style={glass} className="rounded-2xl p-6 max-w-lg mb-4">
+            <h2 className="font-bold text-sm mb-1" style={{ color: brand.navy[950] }}>Meta de Ventas Diaria</h2>
+            <p className="text-xs mb-4" style={{ color: '#64748B' }}>
+              Línea de meta que aparece en el gráfico de ventas del dashboard.
+            </p>
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Meta diaria ($)</label>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white">
+                  <span className="text-sm font-bold" style={{ color: '#94A3B8' }}>$</span>
+                  <input type="number" step="100" min="0" value={salesTargetInput}
+                    onChange={(e) => setSalesTargetInput(e.target.value)}
+                    className="flex-1 text-sm outline-none font-mono" style={{ color: brand.navy[900] }} />
+                </div>
+              </div>
+              <button
+                onClick={() => { const v = Number(salesTargetInput); if (!isNaN(v) && v >= 0) setConfig.mutate({ key: 'SALES_TARGET', value: String(v) }); }}
+                disabled={setConfig.isPending}
+                className="px-4 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-50"
+                style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+                Guardar
+              </button>
+            </div>
+            <div className="mt-3 p-3 rounded-xl" style={{ backgroundColor: 'rgba(10,22,40,0.03)' }}>
+              <div className="text-xs font-semibold mb-1" style={{ color: brand.navy[700] }}>Meta actual</div>
+              <div className="text-lg font-bold font-mono" style={{ color: brand.orange[500] }}>
+                ${sysConfig?.SALES_TARGET ? Number(sysConfig.SALES_TARGET).toLocaleString() : '5,000'}/día
+              </div>
+            </div>
+          </div>
+
           <div style={glass} className="rounded-2xl p-6 max-w-lg">
             <h2 className="font-bold text-sm mb-1" style={{ color: brand.navy[950] }}>Impuesto sobre Ventas (IVU)</h2>
             <p className="text-xs mb-4" style={{ color: '#64748B' }}>
@@ -430,8 +516,11 @@ export function SettingsClient() {
                 {modal === 'user' ? 'Nuevo Usuario'
                   : modal === 'editUser' ? 'Editar Usuario'
                   : modal === 'category' ? 'Nueva Categoría'
+                  : modal === 'editCategory' ? 'Editar Categoría'
                   : modal === 'warehouse' ? 'Nuevo Almacén'
+                  : modal === 'editWarehouse' ? 'Editar Almacén'
                   : modal === 'location' ? 'Agregar Ubicación'
+                  : modal === 'editSupplier' ? 'Editar Proveedor'
                   : 'Nuevo Proveedor'}
               </h2>
               <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
@@ -550,6 +639,33 @@ export function SettingsClient() {
                   contactName: supContact || undefined, contactEmail: supEmail || undefined,
                   contactPhone: supPhone || undefined, paymentTerms: supTerms || undefined,
                 })} loading={createSup.isPending} label="Crear Proveedor" />
+              </div>
+            )}
+
+            {modal === 'editCategory' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={editCatName} onChange={(e) => setEditCatName(e.target.value)} placeholder="Ej: Ventanas de Seguridad" /></F>
+                <F label="Slug *"><input value={editCatSlug} onChange={(e) => setEditCatSlug(e.target.value)} placeholder="ej: ventanas-seguridad" /></F>
+                <Btns onCancel={closeModal} onConfirm={() => updateCat.mutate({ id: editCatId, data: { name: editCatName, slug: editCatSlug } })} loading={updateCat.isPending} label="Guardar Cambios" />
+              </div>
+            )}
+
+            {modal === 'editWarehouse' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={editWhName} onChange={(e) => setEditWhName(e.target.value)} placeholder="Ej: Ponce" /></F>
+                <F label="Dirección"><input value={editWhAddr} onChange={(e) => setEditWhAddr(e.target.value)} placeholder="Ej: Ponce, Puerto Rico" /></F>
+                <Btns onCancel={closeModal} onConfirm={() => updateWh.mutate({ id: editWhId, data: { name: editWhName, address: editWhAddr || undefined } })} loading={updateWh.isPending} label="Guardar Cambios" />
+              </div>
+            )}
+
+            {modal === 'editSupplier' && (
+              <div className="space-y-3">
+                <F label="Nombre *"><input value={editSupName} onChange={(e) => setEditSupName(e.target.value)} placeholder="Nombre del proveedor" /></F>
+                <F label="Contacto"><input value={editSupContact} onChange={(e) => setEditSupContact(e.target.value)} placeholder="Nombre del contacto" /></F>
+                <F label="Email"><input type="email" value={editSupEmail} onChange={(e) => setEditSupEmail(e.target.value)} placeholder="contacto@proveedor.com" /></F>
+                <F label="Teléfono"><input value={editSupPhone} onChange={(e) => setEditSupPhone(e.target.value)} placeholder="+1 (000) 000-0000" /></F>
+                <F label="Términos de pago"><input value={editSupTerms} onChange={(e) => setEditSupTerms(e.target.value)} placeholder="NET-30, COD, etc." /></F>
+                <Btns onCancel={closeModal} onConfirm={() => updateSup.mutate({ id: editSupId, data: { name: editSupName, contactName: editSupContact || undefined, contactEmail: editSupEmail || undefined, contactPhone: editSupPhone || undefined, paymentTerms: editSupTerms || undefined } })} loading={updateSup.isPending} label="Guardar Cambios" />
               </div>
             )}
           </div>

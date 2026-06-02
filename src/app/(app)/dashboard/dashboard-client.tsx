@@ -141,6 +141,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
   const { data: kpis } = trpc.dashboard.kpis.useQuery();
   const { data: salesByDay } = trpc.dashboard.salesByDay.useQuery({ days: 7 });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
+  const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
 
   const userName = fullName.split(' ')[0] ?? 'equipo';
   const now = new Date();
@@ -155,10 +156,11 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
   const costToday = kpis?.costToday ?? 0;
   const grossMargin = salesToday > 0 ? ((salesToday - costToday) / salesToday) * 100 : 0;
 
+  const dailyTarget = sysConfig?.SALES_TARGET ? Number(sysConfig.SALES_TARGET) : 5000;
   const chartData = (salesByDay ?? []).map((d) => ({
     day: formatDayLabel(d.day),
     ventas: d.total,
-    meta: 5000,
+    meta: dailyTarget,
   }));
 
   const categoryChartData = (catData ?? []).map((c) => ({

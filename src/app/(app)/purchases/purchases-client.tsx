@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { Plus, Truck, X, Eye, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Plus, Truck, X, Eye, ChevronRight, ChevronLeft, Package, Pencil } from 'lucide-react';
 import { glass } from '@/lib/ui';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -24,18 +24,22 @@ type POLine = { productId: string; quantityOrdered: string; unitCostUsd: string 
 export function PurchasesClient() {
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [modal, setModal] = useState<'none' | 'create' | 'detail' | 'confirm'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'detail' | 'confirm' | 'receive'>('none');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [confirmAction, setConfirmAction] = useState<{ id: string; currentStatus: string; nextStatus: string } | null>(null);
 
-  // Create form
+  // Create / Edit form
+  const [editPOId, setEditPOId] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const [lines, setLines] = useState<POLine[]>([{ productId: '', quantityOrdered: '1', unitCostUsd: '0' }]);
   const [freight, setFreight] = useState('0');
   const [customs, setCustoms] = useState('0');
   const [exchangeRate, setExchangeRate] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Receive form
+  const [receiveItems, setReceiveItems] = useState<Record<string, { qty: string; locationId: string }>>({});
 
   const { data, isLoading, refetch } = trpc.purchases.list.useQuery({
     status: statusFilter as 'DRAFT' | 'SENT' | 'IN_TRANSIT' | 'RECEIVED' | 'CLOSED' | undefined || undefined,
@@ -50,6 +54,7 @@ export function PurchasesClient() {
 
   const { data: suppliers } = trpc.settings.suppliers.useQuery();
   const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });
+  const { data: warehouses } = trpc.settings.warehouses.useQuery();
 
   const createMutation = trpc.purchases.create.useMutation({
     onSuccess: () => { refetch(); closeModal(); },
@@ -61,10 +66,73 @@ export function PurchasesClient() {
     onError: (e) => setError(e.message),
   });
 
+  const updatePOMutation = trpc.purchases.update.useMutation({
+    onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
+  const receiveMutation = trpc.purchases.receive.useMutation({
+    onSuccess: () => { refetch(); refetchDetail(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
   function closeModal() {
     setModal('none'); setSelectedId(null); setError(''); setConfirmAction(null);
+    setEditPOId('');
     setSupplierId(''); setLines([{ productId: '', quantityOrdered: '1', unitCostUsd: '0' }]);
     setFreight('0'); setCustoms('0'); setExchangeRate(''); setNotes('');
+    setReceiveItems({});
+  }
+
+  function openReceive(id: string) {
+    setSelectedId(id);
+    setReceiveItems({});
+    setModal('receive');
+    setError('');
+  }
+
+  function openEditPO(o: typeof orders[0]) {
+    setEditPOId(o.id);
+    setSelectedId(o.id);
+    setSupplierId('');
+    setFreight('0');
+    setCustoms('0');
+    setNotes('');
+    setLines([{ productId: '', quantityOrdered: '1', unitCostUsd: '0' }]);
+    setModal('edit');
+    setError('');
+  }
+
+  function submitReceive() {
+    if (!selectedId || !detail) return;
+    const itemsToReceive = detail.items
+      .map((item) => {
+        const r = receiveItems[item.id];
+        return { itemId: item.id, quantityReceived: parseInt(r?.qty ?? '0') || 0, locationId: r?.locationId ?? '' };
+      })
+      .filter((r) => r.quantityReceived > 0 && r.locationId);
+
+    if (!itemsToReceive.length) { setError('Ingresa al menos un ítem con cantidad y ubicación'); return; }
+    receiveMutation.mutate({ id: selectedId, items: itemsToReceive });
+  }
+
+  function submitEditPO() {
+    setError('');
+    const validLines = lines.filter((l) => l.productId && parseInt(l.quantityOrdered) > 0);
+    if (!validLines.length) { setError('Agrega al menos un producto'); return; }
+    updatePOMutation.mutate({
+      id: editPOId,
+      supplierId: supplierId || undefined,
+      freightCost: parseFloat(freight) || 0,
+      customsCost: parseFloat(customs) || 0,
+      exchangeRate: exchangeRate ? parseFloat(exchangeRate) : undefined,
+      notes: notes || undefined,
+      items: validLines.map((l) => ({
+        productId: l.productId,
+        quantityOrdered: parseInt(l.quantityOrdered),
+        unitCostUsd: parseFloat(l.unitCostUsd),
+      })),
+    });
   }
 
   function requestStatusChange(id: string, currentStatus: string, nextStatus: string) {
@@ -194,6 +262,18 @@ export function PurchasesClient() {
                             className="p-1.5 rounded-lg hover:bg-slate-100" title="Ver detalle">
                             <Eye size={14} style={{ color: brand.navy[600] }} />
                           </button>
+                          {o.status === 'DRAFT' && (
+                            <button onClick={() => openEditPO(o)}
+                              className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar OC">
+                              <Pencil size={14} style={{ color: '#2563EB' }} />
+                            </button>
+                          )}
+                          {o.status === 'IN_TRANSIT' && (
+                            <button onClick={() => openReceive(o.id)}
+                              className="p-1.5 rounded-lg hover:bg-green-50" title="Recibir mercancía">
+                              <Package size={14} style={{ color: '#16A34A' }} />
+                            </button>
+                          )}
                           {next && (
                             <button
                               onClick={() => requestStatusChange(o.id, o.status, next)}
@@ -413,7 +493,15 @@ export function PurchasesClient() {
               <div className="flex justify-between font-bold" style={{ color: brand.navy[950] }}><span>Total Landed</span><span>{formatCurrency(Number(detail.totalLandedCost))}</span></div>
             </div>
 
-            {STATUS_ORDER[detail.status] && (
+            {detail.status === 'IN_TRANSIT' && (
+              <button
+                onClick={() => openReceive(detail.id)}
+                className="w-full mt-3 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg,#16A34A,#15803D)' }}>
+                <Package size={14} /> Recibir Mercancía
+              </button>
+            )}
+            {STATUS_ORDER[detail.status] && detail.status !== 'IN_TRANSIT' && (
               <button
                 onClick={() => {
                   const next = STATUS_ORDER[detail.status];
@@ -424,6 +512,169 @@ export function PurchasesClient() {
                 Avanzar → {STATUS_STYLES[STATUS_ORDER[detail.status]!]?.label}
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Receive Modal */}
+      {modal === 'receive' && detail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-xl mx-4 rounded-2xl p-6 max-h-[90vh] overflow-y-auto"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold" style={{ color: brand.navy[950] }}>Recibir Mercancía</h2>
+                <p className="text-sm text-slate-500">{detail.poNumber} · {detail.supplier.name}</p>
+              </div>
+              <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
+            </div>
+            {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+            <div className="space-y-3 mb-5">
+              {detail.items.map((item) => {
+                const pending = item.quantityOrdered - item.quantityReceived;
+                const r = receiveItems[item.id] ?? { qty: '', locationId: '' };
+                const allLocs = warehouses?.flatMap((w) =>
+                  (w.locations as unknown as Array<{ id: string; locationCode: string }>).map((l) => ({
+                    id: l.id, label: `${w.name} — ${l.locationCode}`,
+                  }))
+                ) ?? [];
+                return (
+                  <div key={item.id} className="p-3 rounded-xl border border-slate-200">
+                    <div className="flex justify-between mb-2">
+                      <div>
+                        <div className="text-sm font-medium" style={{ color: brand.navy[900] }}>{item.product.name}</div>
+                        <div className="text-xs text-slate-400 font-mono">{item.product.sku}</div>
+                      </div>
+                      <div className="text-right text-xs text-slate-500">
+                        <div>Ordenado: <strong>{item.quantityOrdered}</strong></div>
+                        <div>Recibido: <strong className="text-green-600">{item.quantityReceived}</strong></div>
+                        <div>Pendiente: <strong style={{ color: pending > 0 ? '#D97706' : '#16A34A' }}>{pending}</strong></div>
+                      </div>
+                    </div>
+                    {pending > 0 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-slate-400 mb-1 block">Cantidad a recibir</label>
+                          <input type="number" min="0" max={pending} value={r.qty}
+                            onChange={(e) => setReceiveItems((prev) => ({ ...prev, [item.id]: { ...r, qty: e.target.value } }))}
+                            placeholder={`máx ${pending}`}
+                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm outline-none" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 mb-1 block">Ubicación destino</label>
+                          <select value={r.locationId}
+                            onChange={(e) => setReceiveItems((prev) => ({ ...prev, [item.id]: { ...r, locationId: e.target.value } }))}
+                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none">
+                            <option value="">Seleccionar...</option>
+                            {allLocs.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                    {pending === 0 && (
+                      <div className="text-xs font-medium text-green-600 text-center py-1">✓ Completamente recibido</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+              <button onClick={submitReceive} disabled={receiveMutation.isPending}
+                className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg,#16A34A,#15803D)' }}>
+                <Package size={14} />{receiveMutation.isPending ? 'Registrando...' : 'Registrar Recepción'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit PO Modal (DRAFT only) */}
+      {modal === 'edit' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-2xl mx-4 rounded-2xl p-6 max-h-[92vh] overflow-y-auto"
+            style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold" style={{ color: brand.navy[950] }}>Editar Orden de Compra</h2>
+              <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
+            </div>
+            {error && <div className="mb-4 px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Proveedor</label>
+                <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }}>
+                  <option value="">Sin cambio de proveedor</option>
+                  {suppliers?.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.country})</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="flex justify-between mb-2">
+                  <label className="text-xs font-semibold" style={{ color: brand.navy[700] }}>Productos (reemplaza todos)</label>
+                  <button onClick={addLine} className="text-xs font-medium" style={{ color: brand.orange[500] }}>+ Agregar</button>
+                </div>
+                <div className="space-y-2">
+                  {lines.map((line, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                      <div className="col-span-6">
+                        <select value={line.productId} onChange={(e) => updateLine(i, 'productId', e.target.value)}
+                          className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" style={{ color: brand.navy[900] }}>
+                          <option value="">Seleccionar producto</option>
+                          {products?.products.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>)}
+                        </select>
+                      </div>
+                      <div className="col-span-2">
+                        <input type="number" value={line.quantityOrdered} onChange={(e) => updateLine(i, 'quantityOrdered', e.target.value)}
+                          placeholder="Cant." min="1" className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none text-center" />
+                      </div>
+                      <div className="col-span-3">
+                        <input type="number" value={line.unitCostUsd} onChange={(e) => updateLine(i, 'unitCostUsd', e.target.value)}
+                          placeholder="Costo USD" className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none" />
+                      </div>
+                      <div className="col-span-1 text-right">
+                        <button onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
+                          className="p-1 rounded hover:bg-red-50" disabled={lines.length === 1}>
+                          <X size={12} style={{ color: '#DC2626' }} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Flete USD</label>
+                  <input type="number" value={freight} onChange={(e) => setFreight(e.target.value)} placeholder="0.00"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Aduanas USD</label>
+                  <input type="number" value={customs} onChange={(e) => setCustoms(e.target.value)} placeholder="0.00"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Tasa DOP/USD</label>
+                  <input type="number" value={exchangeRate} onChange={(e) => setExchangeRate(e.target.value)} placeholder="58.50"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Notas</label>
+                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none resize-none" />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-6 justify-end">
+              <button onClick={closeModal} className="px-4 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+              <button onClick={submitEditPO} disabled={updatePOMutation.isPending}
+                className="px-5 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+                {updatePOMutation.isPending ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
+            </div>
           </div>
         </div>
       )}
