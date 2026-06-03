@@ -5,14 +5,20 @@
  */
 import { readFileSync } from 'fs';
 
-// Load .env
+// Load .env — ONLY for variables not already set by the shell.
+// This lets $env:DATABASE_URL (production) take precedence over .env (local).
 const envFile = readFileSync('.env', 'utf-8');
 for (const line of envFile.split('\n')) {
   const [key, ...rest] = line.split('=');
-  if (key?.trim() && rest.length) {
+  if (key?.trim() && rest.length && !process.env[key.trim()]) {
     process.env[key.trim()] = rest.join('=').trim().replace(/^["']|["']$/g, '');
   }
 }
+
+const dbUrl = process.env.DATABASE_URL ?? '';
+const isLocal = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
+console.log(`Base de datos: ${isLocal ? '⚠️  LOCAL (dev)' : '🟢 PRODUCCIÓN'}`);
+console.log(`Host: ${dbUrl.replace(/:[^:@]+@/, ':***@').split('/').slice(0,3).join('/')}\n`);
 
 const { PrismaClient } = await import('@prisma/client');
 const db = new PrismaClient();
