@@ -244,7 +244,7 @@ for (const item of INVENTORY) {
             locationId:    loc.id,
             movementType:  'IN',
             quantity:      item.qty,
-            referenceType: 'DIRECT_RECEIPT',
+            referenceType: 'CYCLE_COUNT',
             referenceId:   'CONTEO-2026-05-28',
             userId:        adminUser.id,
             notes:         'Carga inicial conteo inventario Ponce 28/05/2026',
@@ -324,3 +324,4 @@ if (errors.length > 0) {
 console.log('═══════════════════════════════════════════════════════');
 
 await db.$disconnect();
+

@@ -47,3 +47,24 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Scripts temporales de diagnóstico y operación
+check-*.mjs
+diagnose*.mjs
+audit-bk.mjs
+delete-bk.mjs
+delete-huerfanos.mjs
+safety-check.mjs
+verify-*.mjs
+preview-fix.mjs
+nulls.mjs
+compare.mjs
+list-tables.mjs
+smoke-test.mjs
+estado-bd.mjs
+refs-viejo.mjs
+analiza-sku.mjs
+reset-password.mjs
+cats.mjs
+seed-ponce.mjs.bak
+prod-backup.sql
