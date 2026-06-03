@@ -3,17 +3,11 @@ import { auth } from '@/server/auth';
 import { db } from '@/server/db';
 
 export async function createTRPCContext(opts: { req: NextRequest }) {
-  const session = await auth().catch(() => null);
-
-  // TEMP: bypass auth — inject mock session if none exists
-  const effectiveSession = session ?? {
-    user: { id: 'temp-bypass', name: 'David Morales', email: 'admin@buildershouse.pr', role: 'ADMIN' as const },
-    expires: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString(),
-  };
+  const session = await auth();
 
   return {
     db,
-    session: effectiveSession,
+    session,
     req: opts.req,
   };
 }
