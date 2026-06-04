@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Package, ScanLine, Warehouse, Receipt,
   Users, Truck, BarChart3, Shield, Settings, ChevronDown,
   ShoppingCart, ClipboardCheck, ArrowLeftRight, PackagePlus,
-  SlidersHorizontal, RotateCcw,
+  SlidersHorizontal, RotateCcw, Landmark,
 } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { brand } from '@/lib/brand';
@@ -128,6 +128,7 @@ export function Sidebar({ user }: { user: SidebarUser }) {
         <NavSection label="Ventas" />
         <NavItem icon={ShoppingCart} label="POS" href="/pos" />
         <NavItem icon={Receipt} label="Facturación" href="/invoicing" />
+        <NavItem icon={Landmark} label="CXC" href="/cxc" />
         <NavItem icon={Users} label="Clientes" href="/customers" />
 
         {/* 6 — INTELIGENCIA */}

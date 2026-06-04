@@ -62,6 +62,7 @@ enum InvoiceType {
   INVOICE
   QUOTE
   CREDIT_NOTE
+  BALANCE_FORWARD  // Saldo inicial de migración — CXC
 }
 
 enum CustomerType {

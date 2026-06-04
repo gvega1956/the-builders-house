@@ -10,6 +10,7 @@ import { settingsRouter } from './routers/settings';
 import { cycleCountsRouter } from './routers/cyclecounts';
 import { stockRouter } from './routers/stock';
 import { transfersRouter } from './routers/transfers';
+import { cxcRouter } from './routers/cxc';
 
 export const appRouter = createTRPCRouter({
   products: productsRouter,
@@ -23,6 +24,7 @@ export const appRouter = createTRPCRouter({
   cycleCounts: cycleCountsRouter,
   stock: stockRouter,
   transfers: transfersRouter,
+  cxc: cxcRouter,
 });
 
 export type AppRouter = typeof appRouter;
