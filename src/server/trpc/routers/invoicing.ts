@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
 import { toDecimal } from '@/lib/money';
 import { calculateAvailableStock } from '@/lib/inventory';
+import { detectInvoiceVoidAnomalies, detectInvoiceCreateAnomalies } from '@/lib/anomaly-detector';
 
 // locationId es opcional a nivel de schema; superRefine en el objeto padre
 // lo hace requerido cuando type === 'INVOICE' o 'CREDIT_NOTE'.
@@ -572,6 +573,19 @@ export const invoicingRouter = createTRPCRouter({
         return created;
       });
 
+      // Detección de anomalías post-creación de INVOICE
+      void detectInvoiceCreateAnomalies(
+        ctx.db,
+        {
+          invoiceId: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          status: invoice.status,
+          userId: ctx.session!.user!.id!,
+          total: Number(invoice.total),
+        },
+        ctx.req.headers.get('x-forwarded-for') ?? undefined,
+      );
+
       return invoice;
     }),
 
@@ -710,7 +724,7 @@ export const invoicingRouter = createTRPCRouter({
           message: 'No se puede anular una cotización ya convertida a factura.',
         });
 
-      return ctx.db.$transaction(async (tx) => {
+      const result = await ctx.db.$transaction(async (tx) => {
         const voided = await tx.invoice.update({
           where: { id: input.id },
           data: {
@@ -855,6 +869,24 @@ export const invoicingRouter = createTRPCRouter({
 
         return voided;
       });
+
+      // Detección de anomalías post-void
+      void detectInvoiceVoidAnomalies(
+        ctx.db,
+        {
+          invoiceId: input.id,
+          invoiceNumber: invoice.invoiceNumber,
+          total: Number(invoice.total),
+          createdAt: invoice.createdAt,
+          voidedAt: new Date(),
+          customerId: invoice.customerId,
+          userId: ctx.session!.user!.id!,
+          reason: input.reason,
+        },
+        ctx.req.headers.get('x-forwarded-for') ?? undefined,
+      );
+
+      return result;
     }),
 
   // authorizeBackorder usa managerProcedure directamente (consistente con el resto del codebase)

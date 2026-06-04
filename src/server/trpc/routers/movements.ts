@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
+import { detectMovementAnomalies } from '@/lib/anomaly-detector';
 
 // C-2: valid referenceType values per movementType
 const VALID_REFERENCE_TYPES: Record<string, string[]> = {
@@ -260,6 +261,22 @@ export const movementsRouter = createTRPCRouter({
 
         return created;
       });
+
+      // Detección de anomalías post-transacción — nunca bloquea la operación principal
+      void detectMovementAnomalies(
+        ctx.db,
+        {
+          movementId: movement!.id,
+          productId: input.productId,
+          locationId: input.locationId,
+          movementType: input.movementType,
+          quantity: input.quantity,
+          userId: ctx.session!.user!.id!,
+          referenceId: input.referenceId,
+          notes: input.notes,
+        },
+        ctx.req.headers.get('x-forwarded-for') ?? undefined,
+      );
 
       return movement;
     }),

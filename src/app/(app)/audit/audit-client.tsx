@@ -6,7 +6,7 @@ import { brand } from '@/lib/brand';
 import { formatDateTime } from '@/lib/utils';
 import {
   Shield, ChevronLeft, ChevronRight, Eye, X,
-  Download, Filter, RefreshCw,
+  Download, Filter, RefreshCw, AlertTriangle, ShieldAlert,
 } from 'lucide-react';
 
 const glass = {
@@ -19,7 +19,15 @@ const glass = {
 
 // ─── Estilos por tipo de acción ───────────────────────────────────────────────
 
+const ANOMALY_LEVELS: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  CRITICAL: { bg: '#FEF2F2', text: '#991B1B', border: '#FECACA', label: 'CRÍTICO' },
+  HIGH:     { bg: '#FFF7ED', text: '#C2410C', border: '#FED7AA', label: 'ALTO' },
+  MEDIUM:   { bg: '#FEFCE8', text: '#854D0E', border: '#FDE68A', label: 'MEDIO' },
+  LOW:      { bg: '#F0F9FF', text: '#0369A1', border: '#BAE6FD', label: 'BAJO' },
+};
+
 const ACTION_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  SECURITY_ALERT:      { bg: '#FEF2F2', text: '#991B1B', label: '⚠ Alerta' },
   CREATE:              { bg: '#F0FDF4', text: '#166534', label: 'Crear' },
   UPDATE:              { bg: '#EFF6FF', text: '#1D4ED8', label: 'Actualizar' },
   DELETE:              { bg: '#FEF2F2', text: '#991B1B', label: 'Eliminar' },
@@ -252,6 +260,64 @@ export function AuditClient() {
         </div>
       </div>
 
+      {/* Panel de alertas activas — solo cuando hay SECURITY_ALERT sin filtros */}
+      {!hasFilters && !isLoading && logs.some((l) => l.action === 'SECURITY_ALERT') && (
+        <div className="rounded-2xl overflow-hidden border border-red-200" style={{ background: '#FEF2F2' }}>
+          <div className="px-5 py-3 flex items-center gap-2 border-b border-red-200" style={{ background: '#FEE2E2' }}>
+            <ShieldAlert size={16} style={{ color: '#DC2626' }} />
+            <span className="text-sm font-bold" style={{ color: '#991B1B' }}>
+              Alertas de Seguridad Activas
+            </span>
+            <span className="text-xs ml-auto" style={{ color: '#DC2626' }}>
+              {logs.filter((l) => l.action === 'SECURITY_ALERT').length} alertas en esta página
+            </span>
+            <button
+              onClick={() => { setAction('SECURITY_ALERT'); setPage(1); }}
+              className="text-xs px-3 py-1 rounded-lg font-semibold"
+              style={{ background: '#DC2626', color: 'white' }}
+            >
+              Ver todas
+            </button>
+          </div>
+          <div className="p-4 space-y-2">
+            {logs
+              .filter((l) => l.action === 'SECURITY_ALERT')
+              .slice(0, 5)
+              .map((log) => {
+                const vals = log.newValues as Record<string, unknown> | null;
+                const level = (vals?.level as string) ?? 'MEDIUM';
+                const lvl = ANOMALY_LEVELS[level] ?? ANOMALY_LEVELS.MEDIUM!;
+                return (
+                  <div key={log.id} className="flex items-start gap-3 px-3 py-2 rounded-xl"
+                    style={{ background: lvl.bg, border: `1px solid ${lvl.border}` }}>
+                    <AlertTriangle size={14} style={{ color: lvl.text, marginTop: 2, flexShrink: 0 }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                          style={{ background: lvl.text + '20', color: lvl.text }}>{lvl.label}</span>
+                        <span className="text-xs font-semibold" style={{ color: lvl.text }}>
+                          {vals?.rule as string ?? ''}
+                        </span>
+                        <span className="text-xs text-slate-400 ml-auto shrink-0">
+                          {log.user.name} · {typeof log.createdAt === 'string'
+                            ? new Date(log.createdAt).toLocaleString('es-PR', { timeZone: 'America/Puerto_Rico', hour12: false })
+                            : (log.createdAt as Date).toLocaleString('es-PR', { timeZone: 'America/Puerto_Rico', hour12: false })}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: lvl.text }}>
+                        {vals?.description as string ?? ''}
+                      </p>
+                    </div>
+                    <button onClick={() => setSelected(log)} className="p-1 rounded hover:bg-black/5 shrink-0">
+                      <Eye size={12} style={{ color: lvl.text }} />
+                    </button>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
+
       {/* Tabla */}
       <div style={glass} className="rounded-2xl overflow-hidden">
         {isLoading ? (
@@ -279,6 +345,10 @@ export function AuditClient() {
               </thead>
               <tbody>
                 {logs.map((log, i) => {
+                  const isAlert = log.action === 'SECURITY_ALERT';
+                  const vals = isAlert ? (log.newValues as Record<string, unknown> | null) : null;
+                  const alertLevel = vals?.level as string | undefined;
+                  const lvl = alertLevel ? ANOMALY_LEVELS[alertLevel] : undefined;
                   const st = ACTION_STYLES[log.action] ?? { bg: '#F1F5F9', text: '#475569', label: log.action };
                   const entityLabel = ENTITY_LABELS[log.entityType ?? ''] ?? log.entityType;
                   return (
@@ -286,7 +356,10 @@ export function AuditClient() {
                       key={log.id}
                       style={{
                         borderBottom: i < logs.length - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none',
-                        backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
+                        backgroundColor: isAlert
+                          ? (lvl?.bg ?? '#FFF7ED')
+                          : i % 2 === 0 ? 'transparent' : 'rgba(10,22,40,0.015)',
+                        borderLeft: isAlert ? `3px solid ${lvl?.border ?? '#FED7AA'}` : 'none',
                       }}
                     >
                       <td className="px-4 py-3 text-xs whitespace-nowrap" style={{ color: '#64748B' }}>
@@ -299,12 +372,15 @@ export function AuditClient() {
                         <div className="text-xs text-slate-400">{log.user.role}</div>
                       </td>
                       <td className="px-4 py-3">
-                        <span
-                          className="px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap"
-                          style={{ backgroundColor: st.bg, color: st.text }}
-                        >
-                          {st.label}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          {isAlert && <AlertTriangle size={12} style={{ color: lvl?.text ?? '#C2410C' }} />}
+                          <span
+                            className="px-2 py-0.5 rounded-full text-xs font-bold whitespace-nowrap"
+                            style={{ backgroundColor: st.bg, color: st.text }}
+                          >
+                            {isAlert && lvl ? `${lvl.label} — ${vals?.rule as string ?? ''}` : st.label}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600 text-sm">{entityLabel ?? '—'}</td>
                       <td className="px-4 py-3 font-mono text-xs text-slate-400">
