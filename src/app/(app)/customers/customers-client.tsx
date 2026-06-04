@@ -17,11 +17,12 @@ const glass = {
 type CForm = {
   name: string; type: 'RETAIL' | 'WHOLESALE'; taxId: string; phone: string;
   email: string; address: string; municipality: string; creditLimit: string; notes: string;
+  openingBalance: string;  // Saldo inicial pre-ERP — opcional al crear
 };
 
 const empty: CForm = {
   name: '', type: 'RETAIL', taxId: '', phone: '', email: '',
-  address: '', municipality: '', creditLimit: '0', notes: '',
+  address: '', municipality: '', creditLimit: '0', notes: '', openingBalance: '',
 };
 
 const MUNICIPALITIES = [
@@ -48,8 +49,20 @@ export function CustomersClient() {
     pageSize: 20,
   });
 
+  const setOpeningBalance = trpc.cxc.setOpeningBalance.useMutation({
+    onSuccess: () => { refetch(); },
+    onError: () => { /* saldo inicial falló silencioso — el cliente ya fue creado */ },
+  });
+
   const create = trpc.customers.create.useMutation({
-    onSuccess: () => { refetch(); close_(); },
+    onSuccess: (newCustomer) => {
+      refetch();
+      const bal = parseFloat(form.openingBalance);
+      if (bal > 0 && newCustomer?.id) {
+        setOpeningBalance.mutate({ customerId: newCustomer.id, amount: bal, notes: 'Saldo inicial ingresado al crear cliente' });
+      }
+      close_();
+    },
     onError: (e) => setError(e.message),
   });
 
@@ -82,7 +95,7 @@ export function CustomersClient() {
       name: c.name, type: c.type,
       taxId: c.taxId ?? '', phone: c.phone ?? '', email: c.email ?? '',
       address: c.address ?? '', municipality: c.municipality ?? '',
-      creditLimit: String(c.creditLimit), notes: c.notes ?? '',
+      creditLimit: String(c.creditLimit), notes: c.notes ?? '', openingBalance: '',
     });
     setEditId(c.id); setModal('edit'); setError('');
   }
@@ -440,6 +453,17 @@ export function CustomersClient() {
                 <FLabel>Límite de Crédito</FLabel>
                 <FInput value={form.creditLimit} onChange={(v) => setForm(f => ({ ...f, creditLimit: v }))} placeholder="0.00" type="number" />
               </div>
+              {modal === 'create' && (
+                <div>
+                  <FLabel>Saldo Inicial (opcional)</FLabel>
+                  <FInput value={form.openingBalance} onChange={(v) => setForm(f => ({ ...f, openingBalance: v }))} placeholder="0.00 — deuda previa al ERP" type="number" />
+                  {parseFloat(form.openingBalance) > 0 && (
+                    <p className="text-xs mt-1" style={{ color: brand.orange[500] }}>
+                      Se creará un registro BAL-XXXXX en Cuentas por Cobrar
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="col-span-2">
                 <FLabel>Notas</FLabel>
                 <textarea value={form.notes} onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))} rows={2}

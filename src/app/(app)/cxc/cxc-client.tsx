@@ -29,7 +29,7 @@ export function CxcClient({ role }: { role: string }) {
   // ── Estado general
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [search, setSearch] = useState('');
-  const [hasBalance, setHasBalance] = useState<boolean | undefined>(true);
+  const [hasBalance, setHasBalance] = useState<boolean | undefined>(undefined);
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
 
@@ -353,7 +353,7 @@ export function CxcClient({ role }: { role: string }) {
                                   <ArrowDownLeft size={14} style={{ color: '#059669' }} />
                                 </button>
                               )}
-                              {canManage && c.openInvoicesCount === 0 && c.currentBalance === 0 && (
+                              {canManage && (
                                 <button onClick={() => openOpening(c.id)} title="Ingresar Saldo Inicial"
                                   className="p-1.5 rounded-lg hover:bg-orange-50">
                                   <Plus size={14} style={{ color: brand.orange[500] }} />
