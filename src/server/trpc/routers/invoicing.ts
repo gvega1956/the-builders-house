@@ -107,15 +107,22 @@ export const invoicingRouter = createTRPCRouter({
         to: z.date().optional(),
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(1000).default(50),
+        // Cotizaciones convertidas son referencia histórica — se ocultan por defecto
+        hideConverted: z.boolean().default(true),
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { search, type, status, customerId, from, to, page = 1, pageSize = 50 } = input ?? {};
+      const { search, type, status, customerId, from, to, page = 1, pageSize = 50, hideConverted = true } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.InvoiceWhereInput = {
         ...(type && { type }),
-        ...(status && { status }),
+        // Si se pide explícitamente un status, respetarlo; si no, excluir CONVERTED
+        ...(status
+          ? { status }
+          : hideConverted
+            ? { status: { not: 'CONVERTED' } }
+            : {}),
         ...(customerId && { customerId }),
         ...(from || to
           ? { createdAt: { ...(from && { gte: from }), ...(to && { lte: to }) } }
@@ -950,6 +957,158 @@ export const invoicingRouter = createTRPCRouter({
       });
     }),
 
+  // Devuelve disponibilidad de un producto en TODAS las sucursales.
+  // Usado por el frontend para sugerir ubicaciones alternativas cuando hay escasez.
+  stockAvailability: protectedProcedure
+    .input(z.object({ productId: z.string().cuid() }))
+    .query(async ({ ctx, input }) => {
+      const locations = await ctx.db.productLocation.findMany({
+        where: { productId: input.productId },
+        include: { warehouse: { select: { id: true, name: true } } },
+        orderBy: { quantityOnHand: 'desc' },
+      });
+      return locations.map((loc) => ({
+        locationId: loc.id,
+        locationCode: loc.locationCode,
+        warehouseId: loc.warehouse.id,
+        warehouseName: loc.warehouse.name,
+        quantityOnHand: loc.quantityOnHand,
+        reservedQuantity: loc.reservedQuantity,
+        available: Math.max(0, loc.quantityOnHand - loc.reservedQuantity),
+      }));
+    }),
+
+  // Autoriza backorder Y registra pago en una sola transacción atómica.
+  // Solo MANAGER/ADMIN. Evita el flujo de dos pasos que confundía a los usuarios.
+  authorizeAndPay: managerProcedure
+    .input(
+      z.object({
+        id: z.string().cuid(),
+        authorizationNotes: z.string().min(1),
+        amount: z.number().positive(),
+        method: z.enum(['CASH', 'CHECK', 'TRANSFER', 'CARD', 'CREDIT']),
+        reference: z.string().optional(),
+        paymentNotes: z.string().optional(),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const invoice = await ctx.db.invoice.findUnique({
+        where: { id: input.id },
+        include: { items: true },
+      });
+      if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (invoice.status !== 'PENDING_AUTHORIZATION') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Estado actual: ${invoice.status}. Solo facturas PENDING_AUTHORIZATION pueden autorizarse.`,
+        });
+      }
+
+      const orphanItems = invoice.items.filter((i) => !i.locationId);
+      if (orphanItems.length > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `${orphanItems.length} ítem(s) tienen la ubicación eliminada. Recree la factura antes de autorizar.`,
+        });
+      }
+
+      const balanceDue = invoice.total.sub(invoice.paidAmount);
+      if (toDecimal(input.amount).gt(balanceDue)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `El pago ($${input.amount}) excede el balance pendiente ($${balanceDue.toString()})`,
+        });
+      }
+
+      return ctx.db.$transaction(async (tx) => {
+        const locationIds = [...new Set(invoice.items.map((i) => i.locationId!))].sort();
+
+        for (const locId of locationIds) {
+          const rows = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT id FROM product_locations WHERE id = ${locId} FOR UPDATE
+          `;
+          if (!rows[0]) throw new TRPCError({ code: 'NOT_FOUND', message: `Ubicación '${locId}' no encontrada.` });
+        }
+
+        // 1. Descarga inventario y libera reservas
+        for (const item of invoice.items) {
+          await tx.inventoryMovement.create({
+            data: {
+              productId: item.productId,
+              locationId: item.locationId!,
+              movementType: 'OUT',
+              quantity: -item.quantity,
+              referenceType: 'INVOICE',
+              referenceId: invoice.invoiceNumber,
+              userId: ctx.session!.user!.id!,
+              ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+            },
+          });
+          await tx.productLocation.update({
+            where: { id: item.locationId! },
+            data: {
+              quantityOnHand: { decrement: item.quantity },
+              reservedQuantity: { decrement: item.quantity },
+            },
+          });
+        }
+
+        // 2. Incrementa balance del cliente (ahora debe la factura)
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: { currentBalance: { increment: invoice.total } },
+        });
+
+        // 3. Registra el pago
+        const totalPaid = invoice.paidAmount.add(toDecimal(input.amount));
+        const newStatus = totalPaid.gte(invoice.total) ? 'PAID' : 'PARTIAL';
+
+        await tx.payment.create({
+          data: {
+            invoiceId: input.id,
+            amount: toDecimal(input.amount),
+            method: input.method,
+            reference: input.reference,
+            notes: input.paymentNotes,
+            receivedById: ctx.session!.user!.id!,
+          },
+        });
+
+        const updated = await tx.invoice.update({
+          where: { id: input.id },
+          data: { status: newStatus, paidAmount: totalPaid },
+        });
+
+        // 4. Decrementa balance del cliente con el pago recibido
+        await tx.customer.update({
+          where: { id: invoice.customerId },
+          data: { currentBalance: { decrement: toDecimal(input.amount) } },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            userId: ctx.session!.user!.id!,
+            action: 'AUTHORIZE_BACKORDER',
+            entityType: 'Invoice',
+            entityId: input.id,
+            newValues: {
+              invoiceNumber: invoice.invoiceNumber,
+              previousStatus: 'PENDING_AUTHORIZATION',
+              newStatus,
+              authorizationNotes: input.authorizationNotes,
+              paymentAmount: input.amount,
+              paymentMethod: input.method,
+              authorizedById: ctx.session!.user!.id!,
+              managerStockOverride: true,
+            } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+          },
+        });
+
+        return updated;
+      });
+    }),
+
   convertQuoteToInvoice: protectedProcedure
     .input(
       z.object({
@@ -1235,7 +1394,7 @@ export const invoicingRouter = createTRPCRouter({
       });
     }),
 
-  // ─── Update (DRAFT or QUOTE only) ────────────────────────────────────────
+  // ─── Update — DRAFT, QUOTE, o ISSUED sin pagos (Fortune 500 logic) ─────────
 
   update: managerProcedure
     .input(
@@ -1245,18 +1404,48 @@ export const invoicingRouter = createTRPCRouter({
         taxRate: z.number().min(0).max(1),
         dueDate: z.date().optional(),
         notes: z.string().optional(),
+        editReason: z.string().optional(), // requerido para ISSUED
         items: z.array(invoiceItemSchema).min(1),
+      }).superRefine(({ editReason }, ctx) => {
+        // editReason se valida dinámicamente en el mutation según el estado
+        void editReason; void ctx;
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const invoice = await ctx.db.invoice.findUnique({ where: { id: input.id } });
+      const invoice = await ctx.db.invoice.findUnique({
+        where: { id: input.id },
+        include: { items: true },
+      });
       if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      if (invoice.status !== 'DRAFT' && invoice.type !== 'QUOTE') {
+      const canEdit =
+        invoice.status === 'DRAFT' ||
+        invoice.type === 'QUOTE' ||
+        (invoice.type === 'INVOICE' && invoice.status === 'ISSUED');
+
+      if (!canEdit) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: 'Solo se pueden editar borradores o cotizaciones.',
+          message: `No se puede editar una factura con estado ${invoice.status}. Use una Nota de Crédito para facturas pagadas.`,
         });
+      }
+
+      // ISSUED con pagos → bloquear (ya hay dinero aplicado)
+      const isIssuedInvoice = invoice.type === 'INVOICE' && invoice.status === 'ISSUED';
+      if (isIssuedInvoice) {
+        const paymentCount = await ctx.db.payment.count({ where: { invoiceId: input.id } });
+        if (paymentCount > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'No se puede editar una factura con pagos registrados. Use una Nota de Crédito.',
+          });
+        }
+        if (!input.editReason?.trim()) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Se requiere el motivo de la edición (editReason) para modificar una factura emitida.',
+          });
+        }
       }
 
       const { itemsData, subtotal, taxRateDecimal, taxAmount, total } = calcInvoiceTotals(
@@ -1265,6 +1454,37 @@ export const invoicingRouter = createTRPCRouter({
       );
 
       await ctx.db.$transaction(async (tx) => {
+        // Para ISSUED: revertir movimientos de inventario anteriores
+        if (isIssuedInvoice) {
+          for (const oldItem of invoice.items) {
+            if (!oldItem.locationId) continue;
+            // Reversa del OUT original
+            await tx.inventoryMovement.create({
+              data: {
+                productId: oldItem.productId,
+                locationId: oldItem.locationId,
+                movementType: 'RETURN',
+                quantity: oldItem.quantity,
+                referenceType: 'INVOICE',
+                referenceId: invoice.invoiceNumber,
+                userId: ctx.session!.user!.id!,
+                notes: `Reversa por edición de factura: ${input.editReason}`,
+                ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+              },
+            });
+            await tx.productLocation.update({
+              where: { id: oldItem.locationId },
+              data: { quantityOnHand: { increment: oldItem.quantity } },
+            });
+          }
+          // Revertir balance del cliente con el total anterior
+          await tx.customer.update({
+            where: { id: invoice.customerId },
+            data: { currentBalance: { decrement: invoice.total } },
+          });
+        }
+
+        // Reemplazar ítems
         await tx.invoiceItem.deleteMany({ where: { invoiceId: input.id } });
 
         for (const [i, item] of itemsData.entries()) {
@@ -1278,6 +1498,36 @@ export const invoicingRouter = createTRPCRouter({
               discountPercent: item.discountPercent,
               lineTotal: item.lineTotal,
             },
+          });
+        }
+
+        // Para ISSUED: crear nuevos movimientos OUT con los nuevos ítems
+        if (isIssuedInvoice) {
+          for (const [i, item] of itemsData.entries()) {
+            const locId = input.items[i]!.locationId;
+            if (!locId) continue;
+            await tx.inventoryMovement.create({
+              data: {
+                productId: item.productId,
+                locationId: locId,
+                movementType: 'OUT',
+                quantity: -item.quantity,
+                referenceType: 'INVOICE',
+                referenceId: invoice.invoiceNumber,
+                userId: ctx.session!.user!.id!,
+                notes: `Reemisión por edición: ${input.editReason}`,
+                ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+              },
+            });
+            await tx.productLocation.update({
+              where: { id: locId },
+              data: { quantityOnHand: { decrement: item.quantity } },
+            });
+          }
+          // Aplicar nuevo total al balance del cliente
+          await tx.customer.update({
+            where: { id: invoice.customerId },
+            data: { currentBalance: { increment: total } },
           });
         }
 
@@ -1300,8 +1550,17 @@ export const invoicingRouter = createTRPCRouter({
             action: 'UPDATE',
             entityType: 'Invoice',
             entityId: input.id,
-            oldValues: { invoiceNumber: invoice.invoiceNumber, total: invoice.total.toString() } as Prisma.InputJsonValue,
-            newValues: { itemCount: input.items.length, total: total.toString() } as Prisma.InputJsonValue,
+            oldValues: {
+              invoiceNumber: invoice.invoiceNumber,
+              total: invoice.total.toString(),
+              itemCount: invoice.items.length,
+            } as Prisma.InputJsonValue,
+            newValues: {
+              itemCount: input.items.length,
+              total: total.toString(),
+              ...(isIssuedInvoice && { editReason: input.editReason }),
+            } as Prisma.InputJsonValue,
+            ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
           },
         });
       });

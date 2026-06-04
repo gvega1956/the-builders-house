@@ -214,7 +214,7 @@ export function InvoicingClient({ role }: { role: string }) {
   const [arCustomerId, setArCustomerId] = useState('');
 
   // Modal state
-  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'detail' | 'payment' | 'void' | 'authorize' | 'convertQuote'>('none');
+  const [modal, setModal] = useState<'none' | 'create' | 'edit' | 'detail' | 'payment' | 'void' | 'authorize' | 'authorizeAndPay' | 'convertQuote'>('none');
   const [convertLocations, setConvertLocations] = useState<Record<string, string>>({});
   const [convertTaxExempt, setConvertTaxExempt] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -241,6 +241,12 @@ export function InvoicingClient({ role }: { role: string }) {
   // Void / Authorize
   const [voidReason, setVoidReason] = useState('');
   const [authNotes, setAuthNotes] = useState('');
+  const [authPayAmount, setAuthPayAmount] = useState('');
+  const [authPayMethod, setAuthPayMethod] = useState<'CASH'|'CHECK'|'TRANSFER'|'CARD'|'CREDIT'>('CASH');
+  const [authPayRef, setAuthPayRef] = useState('');
+
+  // Edit reason (required for ISSUED invoices)
+  const [editReason, setEditReason] = useState('');
 
   // Queries
   const { data, isLoading, refetch } = trpc.invoicing.list.useQuery({
@@ -285,6 +291,10 @@ export function InvoicingClient({ role }: { role: string }) {
     onError: (e) => setError(e.message),
   });
   const authorizeMutation = trpc.invoicing.authorizeBackorder.useMutation({
+    onSuccess: () => { refetch(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+  const authorizeAndPayMutation = trpc.invoicing.authorizeAndPay.useMutation({
     onSuccess: () => { refetch(); closeModal(); },
     onError: (e) => setError(e.message),
   });
@@ -338,6 +348,8 @@ export function InvoicingClient({ role }: { role: string }) {
     setApplyIvu(true); setPaymentMode('CONTADO'); setCreditDays(30);
     setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef('');
     setVoidReason(''); setAuthNotes('');
+    setAuthPayAmount(''); setAuthPayMethod('CASH'); setAuthPayRef('');
+    setEditReason('');
     setConvertLocations({}); setConvertTaxExempt(false);
   }
 
@@ -422,6 +434,7 @@ export function InvoicingClient({ role }: { role: string }) {
         taxRate: effectiveTaxRate,
         dueDate: computedDueDate,
         notes: notes || undefined,
+        editReason: editReason || undefined,
         items: itemsPayload,
       });
     } else {
@@ -791,7 +804,11 @@ export function InvoicingClient({ role }: { role: string }) {
                             className="p-1.5 rounded-lg hover:bg-slate-100" title="Ver detalle">
                             <Eye size={14} style={{ color: brand.navy[600] }} />
                           </button>
-                          {(inv.status === 'DRAFT' || (inv as unknown as { type: string }).type === 'QUOTE') && (
+                          {/* Editar: DRAFT, QUOTE, o ISSUED (manager) */}
+                          {(inv.status === 'DRAFT' ||
+                            (inv as unknown as { type: string }).type === 'QUOTE' ||
+                            (inv.status === 'ISSUED' && (inv as unknown as { type: string }).type === 'INVOICE' && canAuthorize)
+                          ) && (
                             <button
                               onClick={() => { setEditInvoiceId(inv.id); setModal('edit'); }}
                               className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar">
@@ -811,10 +828,11 @@ export function InvoicingClient({ role }: { role: string }) {
                               <DollarSign size={14} style={{ color: '#16A34A' }} />
                             </button>
                           )}
+                          {/* Autorizar + Cobrar en un paso (manager) */}
                           {inv.status === 'PENDING_AUTHORIZATION' && canAuthorize && (
-                            <button onClick={() => { setSelectedId(inv.id); setModal('authorize'); setAuthNotes(''); }}
-                              className="p-1.5 rounded-lg hover:bg-orange-50" title="Autorizar backorder">
-                              <ShieldCheck size={14} style={{ color: brand.orange[500] }} />
+                            <button onClick={() => { setSelectedId(inv.id); setModal('authorizeAndPay'); setAuthNotes(''); setAuthPayAmount(''); setAuthPayMethod('CASH'); setAuthPayRef(''); }}
+                              className="p-1.5 rounded-lg hover:bg-green-50" title="Autorizar y Cobrar">
+                              <ShieldCheck size={14} style={{ color: '#059669' }} />
                             </button>
                           )}
                           <a href={`/api/print/invoice/${inv.id}`} target="_blank" rel="noreferrer"
@@ -1065,13 +1083,23 @@ export function InvoicingClient({ role }: { role: string }) {
                                   ))}
                                 </select>
                                 {line.productSku && (
-                                  <div className="flex items-center gap-2 mt-1">
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
                                     <span className="font-mono text-xs px-1.5 py-0.5 rounded"
                                       style={{ background: brand.navy[950] + '10', color: brand.navy[700] }}>
                                       {line.productSku}
                                     </span>
-                                    {!line.locationId && line.availableStock > 0 && (
-                                      <span className="text-xs text-slate-400">{line.availableStock} disp.</span>
+                                    {/* Stock por sucursal */}
+                                    {getLocationsForProduct(line.productId).map((loc) => (
+                                      <span key={loc.id} className="text-xs px-1.5 py-0.5 rounded"
+                                        style={{
+                                          background: loc.available > 0 ? '#F0FDF4' : '#FEF2F2',
+                                          color: loc.available > 0 ? '#166534' : '#991B1B',
+                                        }}>
+                                        {loc.label.split(' — ')[0]}: {loc.available}u
+                                      </span>
+                                    ))}
+                                    {getLocationsForProduct(line.productId).length === 0 && (
+                                      <span className="text-xs text-red-500">Sin stock en sistema</span>
                                     )}
                                   </div>
                                 )}
@@ -1153,6 +1181,22 @@ export function InvoicingClient({ role }: { role: string }) {
                       className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none resize-none"
                       style={{ color: brand.navy[900] }} />
                   </div>
+
+                  {/* Motivo de edición — requerido al editar factura ISSUED */}
+                  {modal === 'edit' && editInvoiceData?.status === 'ISSUED' && editInvoiceData?.type === 'INVOICE' && (
+                    <div className="rounded-xl p-3 border" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: '#92400E' }}>
+                        Motivo de edición * <span className="font-normal">(factura emitida — requerido)</span>
+                      </label>
+                      <input value={editReason} onChange={(e) => setEditReason(e.target.value)}
+                        placeholder="Ej: Error en cantidad, precio acordado diferente..."
+                        className="w-full px-3 py-2 rounded-xl border border-amber-200 text-sm outline-none"
+                        style={{ color: brand.navy[900] }} />
+                      <p className="text-xs mt-1.5" style={{ color: '#92400E' }}>
+                        El inventario se revertirá y re-calculará. Queda registrado en auditoría.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Action bar */}
@@ -1320,10 +1364,10 @@ export function InvoicingClient({ role }: { role: string }) {
                   </button>
                 )}
                 {detail.status === 'PENDING_AUTHORIZATION' && canAuthorize && (
-                  <button onClick={() => setModal('authorize')}
+                  <button onClick={() => { setModal('authorizeAndPay'); setAuthNotes(''); setAuthPayAmount(''); setAuthPayMethod('CASH'); setAuthPayRef(''); }}
                     className="flex-1 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90"
                     style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
-                    Autorizar Backorder
+                    Autorizar + Cobrar
                   </button>
                 )}
               </div>
@@ -1424,6 +1468,91 @@ export function InvoicingClient({ role }: { role: string }) {
                 className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
                 style={{ background: '#059669' }}>
                 {authorizeMutation.isPending ? 'Autorizando...' : 'Autorizar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
+          AUTHORIZE + PAY MODAL (un solo paso)
+      ══════════════════════════════════════════════════════════ */}
+      {modal === 'authorizeAndPay' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
+          <div className="relative w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: 'rgba(255,255,255,0.98)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
+            <div className="px-6 py-4" style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <ShieldCheck size={16} /> Autorizar + Cobrar
+              </h2>
+              <p className="text-xs mt-1" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                Autoriza el stock y registra el pago en un solo paso.
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              {error && <div className="px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{error}</div>}
+              {detail && (
+                <div className="flex items-center justify-between p-3 rounded-xl" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+                  <span className="text-sm text-slate-600">Total a cobrar</span>
+                  <span className="font-bold text-lg" style={{ color: '#059669' }}>
+                    {formatCurrency(Number(detail.total) - Number(detail.paidAmount))}
+                  </span>
+                </div>
+              )}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Justificación de autorización *</label>
+                <textarea value={authNotes} onChange={(e) => setAuthNotes(e.target.value)} rows={2}
+                  placeholder="Motivo de autorización de stock..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none resize-none" style={{ color: brand.navy[900] }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Monto recibido *</label>
+                <input type="number" value={authPayAmount} onChange={(e) => setAuthPayAmount(e.target.value)} placeholder="0.00"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-2" style={{ color: brand.navy[700] }}>Método de pago</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['CASH', 'CHECK', 'TRANSFER', 'CARD', 'CREDIT'] as const).map((m) => (
+                    <button key={m} onClick={() => setAuthPayMethod(m)}
+                      className="py-1.5 rounded-xl text-xs font-semibold transition-all"
+                      style={{
+                        background: authPayMethod === m ? '#059669' : 'transparent',
+                        color: authPayMethod === m ? 'white' : brand.navy[700],
+                        border: `2px solid ${authPayMethod === m ? '#059669' : '#E2E8F0'}`,
+                      }}>
+                      {m === 'CASH' ? 'Efectivo' : m === 'CHECK' ? 'Cheque' : m === 'TRANSFER' ? 'Transf.' : m === 'CARD' ? 'Tarjeta' : 'Crédito'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Referencia (opcional)</label>
+                <input value={authPayRef} onChange={(e) => setAuthPayRef(e.target.value)} placeholder="#cheque, confirmación..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }} />
+              </div>
+            </div>
+            <div className="px-6 pb-5 flex gap-3">
+              <button onClick={closeModal} className="flex-1 py-2 rounded-xl text-sm border hover:bg-slate-50" style={{ color: '#64748B' }}>Cancelar</button>
+              <button
+                onClick={() => {
+                  if (!selectedId) return;
+                  const amount = parseFloat(authPayAmount);
+                  if (!amount || amount <= 0) { setError('Monto inválido'); return; }
+                  if (!authNotes.trim()) { setError('La justificación es requerida'); return; }
+                  authorizeAndPayMutation.mutate({
+                    id: selectedId,
+                    authorizationNotes: authNotes,
+                    amount,
+                    method: authPayMethod,
+                    reference: authPayRef || undefined,
+                  });
+                }}
+                disabled={!authNotes.trim() || !authPayAmount || authorizeAndPayMutation.isPending}
+                className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
+                {authorizeAndPayMutation.isPending ? 'Procesando...' : 'Autorizar + Cobrar'}
               </button>
             </div>
           </div>
