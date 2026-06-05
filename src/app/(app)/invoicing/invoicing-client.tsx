@@ -442,6 +442,7 @@ export function InvoicingClient({ role }: { role: string }) {
         customerId,
         type: invoiceType,
         taxRate: effectiveTaxRate,
+        paymentTerms: paymentMode,
         dueDate: computedDueDate,
         notes: notes || undefined,
         items: itemsPayload,

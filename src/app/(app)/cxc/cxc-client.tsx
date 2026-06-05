@@ -30,6 +30,7 @@ export function CxcClient({ role }: { role: string }) {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [search, setSearch] = useState('');
   const [hasBalance, setHasBalance] = useState<boolean | undefined>(undefined);
+  const [paymentTermsFilter, setPaymentTermsFilter] = useState<'ALL'|'CREDITO'|'CONTADO'>('ALL');
   const [page, setPage] = useState(1);
   const [error, setError] = useState('');
 
@@ -54,7 +55,7 @@ export function CxcClient({ role }: { role: string }) {
   // ── Queries
   const { data: dashboard } = trpc.cxc.dashboard.useQuery(undefined, { enabled: activeTab === 'dashboard' });
   const { data: custData, isLoading: custLoading, refetch: refetchCust } = trpc.cxc.customerSummary.useQuery(
-    { search: search || undefined, hasBalance, page, pageSize: 20 },
+    { search: search || undefined, hasBalance, paymentTermsFilter, page, pageSize: 20 },
     { enabled: activeTab === 'cuentas' },
   );
   const { data: statement, isLoading: stmtLoading } = trpc.cxc.customerStatement.useQuery(
@@ -298,6 +299,23 @@ export function CxcClient({ role }: { role: string }) {
                 </button>
               ))}
             </div>
+            {/* Filtro por tipo de pago */}
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(10,22,40,0.05)' }}>
+              {([
+                { val: 'ALL',     label: 'Todos' },
+                { val: 'CREDITO', label: 'Crédito' },
+                { val: 'CONTADO', label: 'Contado' },
+              ] as const).map(({ val, label }) => (
+                <button key={val} onClick={() => { setPaymentTermsFilter(val); setPage(1); }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{
+                    background: paymentTermsFilter === val ? (val === 'CREDITO' ? '#1D4ED8' : val === 'CONTADO' ? '#059669' : brand.navy[950]) : 'transparent',
+                    color: paymentTermsFilter === val ? 'white' : '#64748B',
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Tabla */}
@@ -325,8 +343,16 @@ export function CxcClient({ role }: { role: string }) {
                       return (
                         <tr key={c.id} style={{ borderBottom: i < customers.length - 1 ? '1px solid rgba(10,22,40,0.05)' : 'none' }} className="hover:bg-slate-50/40">
                           <td className="px-4 py-3">
-                            <div className="font-medium" style={{ color: brand.navy[950] }}>{c.name}</div>
-                            <div className="text-xs text-slate-400">{c.code} · {c.type === 'WHOLESALE' ? 'Mayorista' : 'Detallista'}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium" style={{ color: brand.navy[950] }}>{c.name}</span>
+                              {c.aging.total > 0 && (
+                                <span className="text-xs px-1.5 py-0.5 rounded font-bold"
+                                  style={{ background: '#EFF6FF', color: '#1D4ED8' }}>
+                                  CRÉDITO
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-slate-400">{c.code} · {c.type === 'WHOLESALE' ? 'Mayorista' : 'Detallista'} · {c.openInvoicesCount} factura{c.openInvoicesCount !== 1 ? 's' : ''} abierta{c.openInvoicesCount !== 1 ? 's' : ''}</div>
                           </td>
                           <td className="px-4 py-3 text-sm" style={{ color: '#059669' }}>{c.aging.current > 0 ? formatCurrency(c.aging.current) : <span className="text-slate-300">—</span>}</td>
                           <td className="px-4 py-3 text-sm" style={{ color: c.aging.d30 > 0 ? '#D97706' : '#CBD5E1' }}>{c.aging.d30 > 0 ? formatCurrency(c.aging.d30) : '—'}</td>

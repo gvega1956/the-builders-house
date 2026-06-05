@@ -375,6 +375,7 @@ model Invoice {
   total         Decimal       @db.Decimal(12, 2)
   status        InvoiceStatus @default(DRAFT)
   paidAmount    Decimal       @db.Decimal(12, 2) @default(0)
+  paymentTerms  String        @default("CONTADO") // CONTADO | CREDITO
   dueDate       DateTime?
   notes             String?
   sourceQuoteId     String?       // set on INVOICE derived from QUOTE via convertQuoteToInvoice

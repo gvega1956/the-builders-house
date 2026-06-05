@@ -114,11 +114,12 @@ export const cxcRouter = createTRPCRouter({
     .input(z.object({
       search: z.string().optional(),
       hasBalance: z.boolean().optional(),
+      paymentTermsFilter: z.enum(['ALL', 'CREDITO', 'CONTADO']).default('ALL'),
       page: z.number().int().min(1).default(1),
       pageSize: z.number().int().min(1).max(200).default(50),
     }).optional())
     .query(async ({ ctx, input }) => {
-      const { search, hasBalance, page = 1, pageSize = 50 } = input ?? {};
+      const { search, hasBalance, paymentTermsFilter = 'ALL', page = 1, pageSize = 50 } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.CustomerWhereInput = {
@@ -140,8 +141,17 @@ export const cxcRouter = createTRPCRouter({
             id: true, code: true, name: true, type: true,
             creditLimit: true, currentBalance: true, phone: true, email: true,
             invoices: {
-              where: { type: { in: ['INVOICE', 'BALANCE_FORWARD'] }, status: { in: ['ISSUED', 'PARTIAL'] } },
-              select: { total: true, paidAmount: true, dueDate: true, invoiceNumber: true, createdAt: true },
+              where: {
+                type: { in: ['INVOICE', 'BALANCE_FORWARD'] },
+                status: { in: ['ISSUED', 'PARTIAL'] },
+                ...(paymentTermsFilter !== 'ALL' && {
+                  OR: [
+                    { paymentTerms: paymentTermsFilter },
+                    { type: 'BALANCE_FORWARD' }, // saldos iniciales siempre incluidos
+                  ],
+                }),
+              },
+              select: { total: true, paidAmount: true, dueDate: true, invoiceNumber: true, createdAt: true, paymentTerms: true, type: true },
             },
           },
           orderBy: { currentBalance: 'desc' },
@@ -564,6 +574,7 @@ export const cxcRouter = createTRPCRouter({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
         type: inv.type,
+        paymentTerms: inv.paymentTerms,
         total: Number(inv.total),
         paidAmount: Number(inv.paidAmount),
         balance: Number(inv.total) - Number(inv.paidAmount),

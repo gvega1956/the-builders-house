@@ -183,6 +183,7 @@ export const invoicingRouter = createTRPCRouter({
         type: z.enum(['INVOICE', 'QUOTE', 'CREDIT_NOTE']).default('INVOICE'),
         items: z.array(invoiceItemSchema).min(1),
         taxRate: z.number().min(0).max(1).default(0.115),
+        paymentTerms: z.enum(['CONTADO', 'CREDITO']).default('CONTADO'),
         dueDate: z.date().optional(),
         notes: z.string().optional(),
         sourceInvoiceId: z.string().cuid().optional(),
