@@ -7,8 +7,10 @@ import {
 import {
   Plus, ChevronDown, DollarSign, Package, TrendingUp,
   ArrowUpRight, ArrowDownRight, AlertTriangle, Camera,
-  CheckCircle2, Shield, Boxes,
+  CheckCircle2, Shield, Boxes, ChevronUp, ExternalLink,
 } from 'lucide-react';
+import { useState } from 'react';
+import Link from 'next/link';
 import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 import { trpc } from '@/lib/trpc';
@@ -142,6 +144,8 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
   const { data: salesByDay } = trpc.dashboard.salesByDay.useQuery({ days: 7 });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
+  const { data: stockAlerts } = trpc.dashboard.stockAlerts.useQuery();
+  const [stockAlertsExpanded, setStockAlertsExpanded] = useState(false);
 
   const userName = fullName.split(' ')[0] ?? 'equipo';
   const now = new Date();
@@ -219,6 +223,117 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           </button>
         </div>
       </div>
+
+      {/* ── Alerta de Stock ─────────────────────────────────────────────── */}
+      {stockAlerts && stockAlerts.totalAlerts > 0 && (
+        <div className="rounded-2xl overflow-hidden border border-red-300"
+          style={{ background: 'linear-gradient(135deg, #FEF2F2 0%, #FFF5F5 100%)', boxShadow: '0 2px 12px rgba(220,38,38,0.12)' }}>
+
+          {/* Header — siempre visible */}
+          <button
+            onClick={() => setStockAlertsExpanded((v) => !v)}
+            className="w-full flex items-center justify-between px-5 py-3.5 text-left"
+            style={{ background: 'rgba(220,38,38,0.08)' }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: 'rgba(220,38,38,0.15)' }}>
+                <AlertTriangle size={16} style={{ color: '#DC2626' }} />
+              </div>
+              <div>
+                <div className="text-sm font-bold" style={{ color: '#991B1B' }}>
+                  Alerta de Inventario — {stockAlerts.totalAlerts} producto{stockAlerts.totalAlerts !== 1 ? 's' : ''} requieren atención
+                </div>
+                <div className="flex items-center gap-3 mt-0.5">
+                  {stockAlerts.zeroStockCount > 0 && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: '#DC2626', color: 'white' }}>
+                      {stockAlerts.zeroStockCount} SIN STOCK
+                    </span>
+                  )}
+                  {stockAlerts.lowStockCount > 0 && (
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: '#D97706', color: 'white' }}>
+                      {stockAlerts.lowStockCount} STOCK BAJO
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link href="/inventory"
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                style={{ color: '#DC2626', border: '1px solid rgba(220,38,38,0.3)', background: 'rgba(220,38,38,0.06)' }}>
+                Ver inventario <ExternalLink size={11} />
+              </Link>
+              {stockAlertsExpanded
+                ? <ChevronUp size={18} style={{ color: '#DC2626' }} />
+                : <ChevronDown size={18} style={{ color: '#DC2626' }} />}
+            </div>
+          </button>
+
+          {/* Lista expandida */}
+          {stockAlertsExpanded && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid rgba(220,38,38,0.15)' }}>
+                    {['SKU', 'Producto', 'Stock actual', 'Stock mínimo', 'Sucursales', 'Estado'].map((h, idx) => (
+                      <th key={h} className={`px-4 py-2.5 text-xs font-semibold uppercase tracking-wide ${idx >= 2 ? 'text-center' : 'text-left'}`}
+                        style={{ color: '#991B1B' }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {stockAlerts.items.map((item, i) => {
+                    const isOut = item.level === 'OUT';
+                    return (
+                      <tr key={item.id}
+                        style={{
+                          borderBottom: i < stockAlerts.items.length - 1 ? '1px solid rgba(220,38,38,0.08)' : 'none',
+                          backgroundColor: isOut ? 'rgba(220,38,38,0.04)' : 'transparent',
+                        }}>
+                        <td className="px-4 py-2.5 font-mono text-xs font-bold" style={{ color: '#991B1B' }}>
+                          {item.sku}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs font-medium" style={{ color: brand.navy[900] }}>
+                          {item.name}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className={`text-sm font-bold ${isOut ? 'text-red-600' : 'text-amber-600'}`}>
+                            {item.totalStock}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-center text-xs text-slate-400">
+                          {item.minStock > 0 ? item.minStock : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-xs text-slate-500">
+                          {item.warehouses ?? '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                            style={isOut
+                              ? { background: '#FEF2F2', color: '#DC2626' }
+                              : { background: '#FFFBEB', color: '#D97706' }}>
+                            {isOut ? 'Sin stock' : 'Stock bajo'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {/* Nota explicativa */}
+              <div className="px-5 py-3 text-xs" style={{ color: '#991B1B', borderTop: '1px solid rgba(220,38,38,0.1)', background: 'rgba(220,38,38,0.04)' }}>
+                Productos de catálogo sin historial de entradas no se muestran aquí. Solo productos que fueron recibidos en inventario.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4">

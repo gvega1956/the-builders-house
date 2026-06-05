@@ -189,4 +189,64 @@ export const dashboardRouter = createTRPCRouter({
     `;
     return result;
   }),
+
+  // Alertas de stock: solo productos que alguna vez tuvieron inventario real.
+  // Excluye productos de catálogo que nunca fueron recibidos (sin movimientos IN).
+  stockAlerts: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.db.$queryRaw<Array<{
+      id: string;
+      sku: string;
+      name: string;
+      minStock: number;
+      totalStock: number;
+      level: string;
+      warehouses: string;
+    }>>`
+      SELECT
+        p.id,
+        p.sku,
+        p.name,
+        p."minStock"::int,
+        COALESCE(SUM(pl."quantityOnHand"), 0)::int AS "totalStock",
+        CASE
+          WHEN COALESCE(SUM(pl."quantityOnHand"), 0) = 0 THEN 'OUT'
+          ELSE 'LOW'
+        END AS level,
+        STRING_AGG(DISTINCT w.name, ', ' ORDER BY w.name) FILTER (WHERE pl.id IS NOT NULL) AS warehouses
+      FROM products p
+      LEFT JOIN product_locations pl ON pl."productId" = p.id
+      LEFT JOIN warehouses w ON w.id = pl."warehouseId"
+      WHERE p."isActive" = true
+        AND (
+          -- Producto sin stock pero que tuvo entradas reales (no solo catálogo)
+          (
+            COALESCE((SELECT SUM(pl2."quantityOnHand") FROM product_locations pl2 WHERE pl2."productId" = p.id), 0) = 0
+            AND EXISTS (
+              SELECT 1 FROM inventory_movements im
+              WHERE im."productId" = p.id AND im."movementType" = 'IN'
+            )
+          )
+          OR
+          -- Producto con stock bajo el mínimo configurado
+          (
+            p."minStock" > 0
+            AND COALESCE((SELECT SUM(pl2."quantityOnHand") FROM product_locations pl2 WHERE pl2."productId" = p.id), 0) > 0
+            AND COALESCE((SELECT SUM(pl2."quantityOnHand") FROM product_locations pl2 WHERE pl2."productId" = p.id), 0) <= p."minStock"
+          )
+        )
+      GROUP BY p.id, p.sku, p.name, p."minStock"
+      ORDER BY "totalStock" ASC, p.name ASC
+      LIMIT 100
+    `;
+
+    const zeroStock = rows.filter((r) => r.level === 'OUT');
+    const lowStock  = rows.filter((r) => r.level === 'LOW');
+
+    return {
+      items: rows,
+      zeroStockCount: zeroStock.length,
+      lowStockCount: lowStock.length,
+      totalAlerts: rows.length,
+    };
+  }),
 });
