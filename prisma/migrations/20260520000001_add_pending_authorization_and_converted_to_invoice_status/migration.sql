@@ -26,12 +26,18 @@
 --   docs/PLAN-CORRECCION.md — Sprint 2, Bug 2.1
 -- ============================================================
 
--- AlterEnum
--- This migration adds more than one value to an enum.
--- With PostgreSQL versions 11 and earlier, this is not possible
--- in a single migration. This can be worked around by creating
--- multiple migrations, each migration adding only one value to
--- the enum.
-
-ALTER TYPE "InvoiceStatus" ADD VALUE 'PENDING_AUTHORIZATION';
-ALTER TYPE "InvoiceStatus" ADD VALUE 'CONVERTED';
+-- NOOP (reescrita 2026-06-11): PENDING_AUTHORIZATION y CONVERTED ya están
+-- incluidos en 20260521000000_baseline (CREATE TYPE "InvoiceStatus" con
+-- todos los valores). Esta migración falló contra la shadow DB de DO
+-- (applied_steps_count=0, rolled_back_at set) y fue resuelta con
+-- migrate resolve --applied. Sus cambios llegaron a producción vía el
+-- baseline, no vía este archivo.
+--
+-- En una BD vacía, la secuencia alfanumérica hace que esta migración corra
+-- ANTES de que el baseline cree el tipo → "type does not exist". El NOOP
+-- permite que migrate deploy complete desde cero sin errores.
+--
+-- Checksums: este archivo fue editado después de ser marcado como aplicado.
+-- migrate deploy (producción) no valida checksums de migraciones ya aplicadas.
+-- migrate dev (desarrollo) detectará el cambio y propondrá resetear la BD
+-- local — comportamiento esperado y documentado.

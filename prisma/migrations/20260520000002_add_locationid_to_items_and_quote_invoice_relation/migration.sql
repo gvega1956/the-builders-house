@@ -29,20 +29,14 @@
 --   ALTER TABLE invoice_items DROP COLUMN "locationId";
 -- ============================================================
 
-ALTER TABLE invoice_items ADD COLUMN "locationId" TEXT;
-ALTER TABLE invoice_items
-  ADD CONSTRAINT "invoice_items_locationId_fkey"
-  FOREIGN KEY ("locationId") REFERENCES product_locations(id) ON DELETE SET NULL;
-
-ALTER TABLE invoices ADD COLUMN "sourceQuoteId" TEXT;
-ALTER TABLE invoices
-  ADD CONSTRAINT "invoices_sourceQuoteId_fkey"
-  FOREIGN KEY ("sourceQuoteId") REFERENCES invoices(id) ON DELETE SET NULL;
-
-CREATE INDEX "idx_invoice_items_location"
-  ON invoice_items("locationId")
-  WHERE "locationId" IS NOT NULL;
-
-CREATE INDEX "idx_invoices_source_quote"
-  ON invoices("sourceQuoteId")
-  WHERE "sourceQuoteId" IS NOT NULL;
+-- NOOP (reescrita 2026-06-11): locationId en invoice_items, sourceQuoteId
+-- en invoices, sus FK constraints e índices ya están todos incluidos en
+-- 20260521000000_baseline (CREATE TABLE). Esta migración fue resuelta con
+-- migrate resolve --applied (applied_steps_count=0 en producción); sus
+-- cambios llegaron a producción vía el baseline, no vía este archivo.
+--
+-- En una BD vacía, esta migración corre ANTES de que el baseline cree las
+-- tablas → "relation does not exist". El NOOP permite que migrate deploy
+-- complete desde cero sin errores.
+--
+-- Checksums: ver nota en 20260520000001 — mismo comportamiento esperado.
