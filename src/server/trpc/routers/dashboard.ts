@@ -191,7 +191,8 @@ export const dashboardRouter = createTRPCRouter({
   }),
 
   // Alertas de stock: solo productos que alguna vez tuvieron inventario real.
-  // Excluye productos de catálogo que nunca fueron recibidos (sin movimientos IN).
+  // Acepta historial vía IN (recepción formal) o ADJUSTMENT positivo (carga inicial vía seed/ajuste).
+  // Excluye productos de catálogo puro que nunca tuvieron ningún movimiento de entrada.
   stockAlerts: protectedProcedure.query(async ({ ctx }) => {
     const rows = await ctx.db.$queryRaw<Array<{
       id: string;
@@ -218,12 +219,16 @@ export const dashboardRouter = createTRPCRouter({
       LEFT JOIN warehouses w ON w.id = pl."warehouseId"
       WHERE p."isActive" = true
         AND (
-          -- Producto sin stock pero que tuvo entradas reales (no solo catálogo)
+          -- Producto sin stock pero que tuvo entradas reales (recepción formal o carga inicial via ADJUSTMENT+)
           (
             COALESCE((SELECT SUM(pl2."quantityOnHand") FROM product_locations pl2 WHERE pl2."productId" = p.id), 0) = 0
             AND EXISTS (
               SELECT 1 FROM inventory_movements im
-              WHERE im."productId" = p.id AND im."movementType" = 'IN'
+              WHERE im."productId" = p.id
+                AND (
+                  im."movementType" = 'IN'
+                  OR (im."movementType" = 'ADJUSTMENT' AND im.quantity > 0)
+                )
             )
           )
           OR
