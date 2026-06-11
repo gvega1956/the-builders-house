@@ -190,7 +190,7 @@ model LoginAttempt {
 model SystemConfig {
   key       String   @id
   value     String
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@map("system_config")
 }
@@ -568,8 +568,8 @@ model Transfer {
   fromWarehouse   Warehouse      @relation("TransferFrom", fields: [fromWarehouseId], references: [id])
   toWarehouse     Warehouse      @relation("TransferTo", fields: [toWarehouseId], references: [id])
   createdBy       User           @relation("TransferCreatedBy", fields: [createdById], references: [id])
-  confirmedBy     User?          @relation("TransferConfirmedBy", fields: [confirmedById], references: [id])
-  cancelledBy     User?          @relation("TransferCancelledBy", fields: [cancelledById], references: [id])
+  confirmedBy     User?          @relation("TransferConfirmedBy", fields: [confirmedById], references: [id], onDelete: Restrict)
+  cancelledBy     User?          @relation("TransferCancelledBy", fields: [cancelledById], references: [id], onDelete: Restrict)
   lines           TransferLine[]
 
   @@index([status])
