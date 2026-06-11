@@ -245,6 +245,18 @@ export const movementsRouter = createTRPCRouter({
           });
         }
 
+        // C-2: ADJUSTMENT negativo no puede dejar quantityOnHand < 0.
+        // Previene el patrón del 09-Jun (ajuste manual que empeoró stock ya negativo).
+        if (movementType === 'ADJUSTMENT' && input.quantity < 0) {
+          const resultingQty = location.quantityOnHand + input.quantity;
+          if (resultingQty < 0) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Ajuste inválido: dejaría el stock en ${resultingQty}. Stock físico mínimo es 0. En mano: ${location.quantityOnHand}.`,
+            });
+          }
+        }
+
         const { destinationLocationId: _dest, ...inputWithoutDest } = input;
         const created = await tx.inventoryMovement.create({
           data: {
