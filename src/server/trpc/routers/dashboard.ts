@@ -190,6 +190,45 @@ export const dashboardRouter = createTRPCRouter({
     return result;
   }),
 
+  // Facturas PENDING_AUTHORIZATION con antigüedad >24h — stock bloqueado sin resolver.
+  pendingAuthAlerts: protectedProcedure.query(async ({ ctx }) => {
+    const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    const [overdue, total] = await Promise.all([
+      ctx.db.invoice.findMany({
+        where: {
+          status: 'PENDING_AUTHORIZATION',
+          type: 'INVOICE',
+          createdAt: { lte: cutoff24h },
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          total: true,
+          createdAt: true,
+          customer: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      ctx.db.invoice.count({
+        where: { status: 'PENDING_AUTHORIZATION', type: 'INVOICE' },
+      }),
+    ]);
+
+    return {
+      overdueCount: overdue.length,
+      totalPendingCount: total,
+      overdue: overdue.map((inv) => ({
+        id: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        total: parseFloat(inv.total.toFixed(2)),
+        customerName: inv.customer?.name ?? '—',
+        hoursWaiting: Math.floor((Date.now() - inv.createdAt.getTime()) / 3_600_000),
+        createdAt: inv.createdAt,
+      })),
+    };
+  }),
+
   // Alertas de stock: solo productos que alguna vez tuvieron inventario real.
   // Acepta historial vía IN (recepción formal) o ADJUSTMENT positivo (carga inicial vía seed/ajuste).
   // Excluye productos de catálogo puro que nunca tuvieron ningún movimiento de entrada.

@@ -7,7 +7,7 @@ import {
 import {
   Plus, ChevronDown, DollarSign, Package, TrendingUp,
   ArrowUpRight, ArrowDownRight, AlertTriangle, Camera,
-  CheckCircle2, Shield, Boxes, ChevronUp, ExternalLink,
+  CheckCircle2, Shield, Boxes, ChevronUp, ExternalLink, Clock,
 } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
@@ -145,6 +145,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
   const { data: stockAlerts } = trpc.dashboard.stockAlerts.useQuery();
+  const { data: pendingAuth } = trpc.dashboard.pendingAuthAlerts.useQuery();
   const [stockAlertsExpanded, setStockAlertsExpanded] = useState(false);
 
   const userName = fullName.split(' ')[0] ?? 'equipo';
@@ -223,6 +224,57 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           </button>
         </div>
       </div>
+
+      {/* ── Facturas Pendientes de Autorización >24h ────────────────────── */}
+      {pendingAuth && pendingAuth.overdueCount > 0 && (
+        <div
+          className="rounded-2xl border border-amber-300 overflow-hidden"
+          style={{
+            background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF9C3 100%)',
+            boxShadow: '0 2px 12px rgba(217,119,6,0.14)',
+          }}
+        >
+          <div className="flex items-center justify-between px-5 py-3.5"
+            style={{ background: 'rgba(217,119,6,0.08)' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(217,119,6,0.18)' }}>
+                <Clock size={16} style={{ color: '#B45309' }} />
+              </div>
+              <div>
+                <div className="text-sm font-bold" style={{ color: '#92400E' }}>
+                  {pendingAuth.overdueCount === 1
+                    ? '1 factura lleva más de 24h esperando autorización'
+                    : `${pendingAuth.overdueCount} facturas llevan más de 24h esperando autorización`
+                  }
+                  {pendingAuth.totalPendingCount > pendingAuth.overdueCount && (
+                    <span className="font-normal text-amber-700 ml-1">
+                      ({pendingAuth.totalPendingCount} total pendientes)
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  {pendingAuth.overdue.map((inv) => (
+                    <span key={inv.id}
+                      className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: inv.hoursWaiting > 72 ? '#DC2626' : '#D97706', color: 'white' }}
+                    >
+                      {inv.invoiceNumber} · {inv.hoursWaiting}h
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <Link
+              href="/invoicing?status=PENDING_AUTHORIZATION"
+              className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg shrink-0 transition-colors"
+              style={{ color: '#92400E', border: '1px solid rgba(217,119,6,0.35)', background: 'rgba(217,119,6,0.08)' }}
+            >
+              Revisar <ExternalLink size={11} />
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* ── Alerta de Stock ─────────────────────────────────────────────── */}
       {stockAlerts && stockAlerts.totalAlerts > 0 && (
