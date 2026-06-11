@@ -27,7 +27,10 @@ export const testDb = new PrismaClient({
 // El middleware enforceUserIsAuthed hace un DB lookup del usuario y sobreescribe
 // el rol en ctx. Lo importante es que userId apunte a un usuario real en la BD
 // de test con el rol correcto.
-export function makeCtx(db: PrismaClient, userId: string) {
+// Devuelve `any` para evitar la importación de tipos de NextRequest en el entorno
+// de test (Next.js no está disponible en el contexto de Vitest).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function makeCtx(db: PrismaClient, userId: string): any {
   return {
     db,
     session: {
@@ -36,10 +39,10 @@ export function makeCtx(db: PrismaClient, userId: string) {
         name: 'Test User',
         email: 'test@internal',
       },
-    } as { user: { id: string; name: string; email: string } },
+    },
     req: {
-      headers: { get: (_: string) => null },
-    } as unknown as import('next/server').NextRequest,
+      headers: { get: (_: string) => null as string | null },
+    },
   };
 }
 

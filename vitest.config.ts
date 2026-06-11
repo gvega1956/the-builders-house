@@ -2,6 +2,7 @@ import { defineConfig } from 'vitest/config';
 import path from 'path';
 
 export default defineConfig({
+  cacheDir: 'D:/proyectos/the-builders-house/.vite-cache',
   test: {
     environment: 'node',
     globals: true,

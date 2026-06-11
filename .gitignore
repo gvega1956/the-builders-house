@@ -68,3 +68,4 @@ reset-password.mjs
 cats.mjs
 seed-ponce.mjs.bak
 prod-backup.sql
+.vite-cache/

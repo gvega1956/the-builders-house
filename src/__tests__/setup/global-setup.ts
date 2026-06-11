@@ -11,6 +11,36 @@
  */
 
 import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
+import path from 'path';
+
+// globalSetup runs before Vitest loads envFile for workers, so we load .env manually.
+// dotenv is not installed; parse it with a simple regex that handles the common cases.
+function loadEnvFile(filePath: string): void {
+  try {
+    const raw = readFileSync(filePath, 'utf8');
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx < 0) continue;
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      // Strip surrounding quotes (single or double)
+      if ((val.startsWith('"') && val.endsWith('"')) ||
+          (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      if (key && !(key in process.env)) {
+        process.env[key] = val;
+      }
+    }
+  } catch {
+    // .env might not exist in CI — that's OK if DATABASE_URL is already set
+  }
+}
+
+loadEnvFile(path.resolve(process.cwd(), '.env'));
 
 function deriveTestUrl(prodUrl: string): string {
   const qmark = prodUrl.indexOf('?');
