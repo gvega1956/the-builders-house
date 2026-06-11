@@ -6,9 +6,12 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     testTimeout: 30000,
-    hookTimeout: 30000,
+    hookTimeout: 60000,
     fileParallelism: false,
+    globalSetup: ['src/__tests__/setup/global-setup.ts'],
     include: ['src/__tests__/**/*.test.ts'],
+    // Load .env so DATABASE_URL is available in globalSetup
+    envFile: '.env',
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json'],
