@@ -219,7 +219,9 @@ export const dashboardRouter = createTRPCRouter({
       LEFT JOIN warehouses w ON w.id = pl."warehouseId"
       WHERE p."isActive" = true
         AND (
-          -- Producto sin stock pero que tuvo entradas reales (recepción formal o carga inicial via ADJUSTMENT+)
+          -- Producto sin stock con evidencia de haber tenido inventario real:
+          -- IN (recepción formal), ADJUSTMENT+ (carga inicial), OUT (fue vendido),
+          -- o ADJUSTMENT- (fue reducido manualmente). Excluye catálogo puro sin historial.
           (
             COALESCE((SELECT SUM(pl2."quantityOnHand") FROM product_locations pl2 WHERE pl2."productId" = p.id), 0) = 0
             AND EXISTS (
@@ -227,7 +229,8 @@ export const dashboardRouter = createTRPCRouter({
               WHERE im."productId" = p.id
                 AND (
                   im."movementType" = 'IN'
-                  OR (im."movementType" = 'ADJUSTMENT' AND im.quantity > 0)
+                  OR im."movementType" = 'OUT'
+                  OR im."movementType" = 'ADJUSTMENT'
                 )
             )
           )
