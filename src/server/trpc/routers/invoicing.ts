@@ -975,12 +975,16 @@ export const invoicingRouter = createTRPCRouter({
             },
           });
 
+          const loc = await tx.productLocation.findUniqueOrThrow({
+            where: { id: item.locationId! },
+            select: { quantityOnHand: true, reservedQuantity: true, backorderQuantity: true },
+          });
           await tx.productLocation.update({
             where: { id: item.locationId! },
             data: {
-              quantityOnHand: { decrement: reservedQty },
-              reservedQuantity: { decrement: reservedQty },
-              backorderQuantity: { decrement: item.quantityBackordered },
+              quantityOnHand: { decrement: Math.min(reservedQty, loc.quantityOnHand) },
+              reservedQuantity: { decrement: Math.min(reservedQty, loc.reservedQuantity) },
+              backorderQuantity: { decrement: Math.min(item.quantityBackordered, loc.backorderQuantity) },
             },
           });
         }
@@ -1107,12 +1111,16 @@ export const invoicingRouter = createTRPCRouter({
             },
           });
 
+          const loc = await tx.productLocation.findUniqueOrThrow({
+            where: { id: item.locationId! },
+            select: { quantityOnHand: true, reservedQuantity: true, backorderQuantity: true },
+          });
           await tx.productLocation.update({
             where: { id: item.locationId! },
             data: {
-              quantityOnHand: { decrement: reservedQty },
-              reservedQuantity: { decrement: reservedQty },
-              backorderQuantity: { decrement: item.quantityBackordered },
+              quantityOnHand: { decrement: Math.min(reservedQty, loc.quantityOnHand) },
+              reservedQuantity: { decrement: Math.min(reservedQty, loc.reservedQuantity) },
+              backorderQuantity: { decrement: Math.min(item.quantityBackordered, loc.backorderQuantity) },
             },
           });
         }
