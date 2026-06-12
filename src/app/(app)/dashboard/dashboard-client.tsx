@@ -16,85 +16,55 @@ import { formatCurrency } from '@/lib/utils';
 import { trpc } from '@/lib/trpc';
 import { glass } from '@/lib/ui';
 
-// Sombra 3D base: resalte interior arriba + suelo oscuro abajo = efecto relieve
-const kpi3dShadow = [
-  '0 1px 0 rgba(255,255,255,0.16) inset',   // resalte superior interior
-  '0 -1px 0 rgba(0,0,0,0.14) inset',         // sombra inferior interior
-  '0 5px 0 rgba(6,12,28,0.62)',               // suelo 3D mismo tono que fondo navy
-  '0 14px 30px rgba(0,0,0,0.32)',             // sombra ambiente
-  '0 2px 8px rgba(0,0,0,0.20)',               // sombra cercana
-].join(', ');
+// Efecto 3D: resalte superior + borde inferior sólido coloreado = tarjeta elevada
+function make3dShadow(floorColor: string, glowColor = 'rgba(0,0,0,0)') {
+  return [
+    '0 1px 0 rgba(255,255,255,0.85) inset',
+    `0 3px 0 ${floorColor}`,
+    `0 8px 20px ${glowColor}`,
+    '0 1px 3px rgba(0,0,0,0.08)',
+  ].join(', ');
+}
 
 const kpiBase = {
-  background: 'linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.08) 100%)',
-  backdropFilter: 'blur(20px)',
-  WebkitBackdropFilter: 'blur(20px)',
-  border: '1.5px solid rgba(255,255,255,0.22)',
-  boxShadow: kpi3dShadow,
+  background: '#FFFFFF',
+  border: '1px solid #E2E8F0',
+  boxShadow: make3dShadow('rgba(0,0,0,0.10)', 'rgba(0,0,0,0.05)'),
 } as React.CSSProperties;
 
 const kpiAccent = {
-  background: 'linear-gradient(160deg, rgba(236,99,38,0.30) 0%, rgba(209,83,30,0.22) 100%)',
-  backdropFilter: 'blur(20px)',
-  WebkitBackdropFilter: 'blur(20px)',
-  border: '1.5px solid rgba(236,99,38,0.58)',
-  boxShadow: [
-    '0 1px 0 rgba(255,190,130,0.22) inset',    // resalte naranja interior
-    '0 -1px 0 rgba(100,28,0,0.18) inset',       // sombra inferior interior
-    '0 5px 0 rgba(130,38,0,0.58)',               // suelo 3D naranja oscuro
-    '0 14px 30px rgba(236,99,38,0.24)',          // halo naranja
-    '0 2px 8px rgba(0,0,0,0.20)',
-  ].join(', '),
+  background: 'linear-gradient(160deg, #FEF3EC 0%, #FDE8D8 100%)',
+  border: '1px solid rgba(236,99,38,0.28)',
+  boxShadow: make3dShadow('rgba(180,70,0,0.22)', 'rgba(236,99,38,0.10)'),
 } as React.CSSProperties;
 
 const kpiColorStyles = {
   blue: {
     card: {
-      ...kpiBase,
-      background: 'rgba(59,130,246,0.20)',
-      border: '1.5px solid rgba(59,130,246,0.48)',
-      boxShadow: [
-        '0 1px 0 rgba(147,197,253,0.18) inset',
-        '0 -1px 0 rgba(0,0,0,0.14) inset',
-        '0 5px 0 rgba(20,50,130,0.60)',
-        '0 14px 30px rgba(0,0,0,0.30)',
-        '0 2px 8px rgba(0,0,0,0.18)',
-      ].join(', '),
+      background: '#EFF6FF',
+      border: '1px solid rgba(59,130,246,0.24)',
+      boxShadow: make3dShadow('rgba(29,78,216,0.18)', 'rgba(59,130,246,0.08)'),
     } as React.CSSProperties,
-    icon: { backgroundColor: 'rgba(59,130,246,0.28)' },
-    iconColor: '#93C5FD',
+    icon: { backgroundColor: '#DBEAFE' },
+    iconColor: '#2563EB',
   },
   green: {
     card: {
-      ...kpiBase,
-      background: 'rgba(16,185,129,0.18)',
-      border: '1.5px solid rgba(16,185,129,0.48)',
-      boxShadow: [
-        '0 1px 0 rgba(110,231,183,0.18) inset',
-        '0 -1px 0 rgba(0,0,0,0.14) inset',
-        '0 5px 0 rgba(5,90,55,0.60)',
-        '0 14px 30px rgba(0,0,0,0.30)',
-        '0 2px 8px rgba(0,0,0,0.18)',
-      ].join(', '),
+      background: '#ECFDF5',
+      border: '1px solid rgba(16,185,129,0.24)',
+      boxShadow: make3dShadow('rgba(4,120,87,0.18)', 'rgba(16,185,129,0.08)'),
     } as React.CSSProperties,
-    icon: { backgroundColor: 'rgba(16,185,129,0.28)' },
-    iconColor: '#6EE7B7',
+    icon: { backgroundColor: '#D1FAE5' },
+    iconColor: '#059669',
   },
   amber: {
     card: {
-      ...kpiBase,
-      background: 'rgba(245,158,11,0.18)',
-      border: '1.5px solid rgba(245,158,11,0.48)',
-      boxShadow: [
-        '0 1px 0 rgba(252,211,77,0.18) inset',
-        '0 -1px 0 rgba(0,0,0,0.14) inset',
-        '0 5px 0 rgba(110,62,0,0.60)',
-        '0 14px 30px rgba(0,0,0,0.30)',
-        '0 2px 8px rgba(0,0,0,0.18)',
-      ].join(', '),
+      background: '#FFFBEB',
+      border: '1px solid rgba(245,158,11,0.24)',
+      boxShadow: make3dShadow('rgba(146,64,14,0.16)', 'rgba(245,158,11,0.08)'),
     } as React.CSSProperties,
-    icon: { backgroundColor: 'rgba(245,158,11,0.28)' },
-    iconColor: '#FCD34D',
+    icon: { backgroundColor: '#FEF3C7' },
+    iconColor: '#D97706',
   },
 };
 
@@ -123,20 +93,20 @@ function KPICard({
           className="w-9 h-9 rounded-xl flex items-center justify-center"
           style={colorStyle
             ? colorStyle.icon
-            : { backgroundColor: accent ? 'rgba(236,99,38,0.28)' : 'rgba(255,255,255,0.16)' }}
+            : { backgroundColor: accent ? brand.orange[100] : '#F1F5F9' }}
         >
           <Icon
             size={17}
             strokeWidth={2}
-            style={{ color: colorStyle ? colorStyle.iconColor : accent ? '#FDB57A' : 'rgba(255,255,255,0.85)' }}
+            style={{ color: colorStyle ? colorStyle.iconColor : accent ? brand.orange[500] : brand.navy[700] }}
           />
         </div>
         {change && (
           <span
             className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg ${
               trend === 'up'
-                ? 'text-emerald-300 bg-emerald-500/20'
-                : 'text-rose-300 bg-rose-500/20'
+                ? 'text-emerald-700 bg-emerald-50'
+                : 'text-rose-700 bg-rose-50'
             }`}
           >
             {trend === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
@@ -146,11 +116,11 @@ function KPICard({
       </div>
       <div
         className="text-2xl font-bold tracking-tight mb-1"
-        style={{ color: accent ? '#FDB57A' : 'rgba(255,255,255,0.95)' }}
+        style={{ color: accent ? brand.orange[600] : brand.navy[950] }}
       >
         {prefix}{value}
       </div>
-      <div className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.52)' }}>{label}</div>
+      <div className="text-xs font-medium text-slate-500">{label}</div>
     </div>
   );
 }
@@ -236,15 +206,15 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           >
             {dateFormatted}
           </div>
-          <h1 className="text-3xl font-bold tracking-tight" style={{ color: 'rgba(255,255,255,0.96)' }}>
+          <h1 className="text-3xl font-bold tracking-tight" style={{ color: brand.navy[950] }}>
             {greeting}, {userName}
           </h1>
-          <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.52)' }}>
+          <p className="text-sm text-slate-500 mt-1">
             {kpis?.invoiceCount ?? 0} facturas hoy · {' '}
             {adjustmentsWithoutPhoto > 0 ? (
-              <span className="font-semibold text-rose-300">{adjustmentsWithoutPhoto} ajuste(s) sin foto</span>
+              <span className="font-semibold text-rose-600">{adjustmentsWithoutPhoto} ajuste(s) sin foto</span>
             ) : (
-              <span className="font-semibold text-emerald-300">Auditoría al día</span>
+              <span className="font-semibold text-emerald-600">Auditoría al día</span>
             )}
           </p>
         </div>
