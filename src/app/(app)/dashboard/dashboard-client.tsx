@@ -66,6 +66,15 @@ const kpiColorStyles = {
     icon: { backgroundColor: '#FEF3C7' },
     iconColor: '#D97706',
   },
+  purple: {
+    card: {
+      background: '#F5F3FF',
+      border: '1px solid rgba(139,92,246,0.28)',
+      boxShadow: make3dShadow('rgba(91,33,182,0.18)', 'rgba(139,92,246,0.09)'),
+    } as React.CSSProperties,
+    icon: { backgroundColor: '#EDE9FE' },
+    iconColor: '#7C3AED',
+  },
 };
 
 function KPICard({
@@ -78,7 +87,7 @@ function KPICard({
   icon: React.ElementType;
   prefix?: string;
   accent?: boolean;
-  color?: 'blue' | 'green' | 'amber';
+  color?: 'blue' | 'green' | 'amber' | 'purple';
 }) {
   const colorStyle = color ? kpiColorStyles[color] : null;
   const cardStyle = accent ? kpiAccent : colorStyle ? colorStyle.card : kpiBase;
@@ -405,7 +414,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           label="Ventas del día"
           value={formatCurrency(salesToday)}
           icon={DollarSign}
-          accent
+          color="purple"
         />
         <KPICard
           label="Unidades vendidas"
