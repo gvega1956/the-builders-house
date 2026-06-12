@@ -27,51 +27,34 @@ beforeEach(async () => {
 // a. OUT movement con referenceId = invoice.id
 // ─────────────────────────────────────────────────────────────────────────────
 describe('a — invoicing.create OUT movements', () => {
-  /**
-   * BUG CONOCIDO: invoicing.create usa `referenceId: invoiceNumber` (string legible,
-   * p.ej. "FAC-00001") en lugar de `referenceId: created.id` (UUID de la factura).
-   *
-   * Las otras rutas (authorizeBackorder, authorizeAndPay, edit) ya fueron corregidas
-   * en el sprint anterior. Esta ruta quedó sin corregir.
-   *
-   * Evidencia: línea ~529 en invoicing.ts:
-   *   referenceId: invoiceNumber,   ← debería ser: created.id
-   *
-   * El test queda como `it.fails` hasta que se aplique el fix.
-   * Cuando se corrija, cambiar a `it` normal y actualizar este comentario.
-   */
-  it.fails(
-    'genera exactamente un OUT movement por línea con referenceId = invoice.id [BUG ACTIVO]',
-    async () => {
-      const caller = createInvoicingCaller(makeCtx(testDb, seed.adminUser.id));
+  it('genera exactamente un OUT movement por línea con referenceId = invoice.id', async () => {
+    const caller = createInvoicingCaller(makeCtx(testDb, seed.adminUser.id));
 
-      const invoice = await caller.create({
-        customerId: seed.customer.id,
-        type: 'INVOICE',
-        items: [
-          {
-            productId: seed.product.id,
-            locationId: seed.location.id,
-            quantity: 3,
-            unitPrice: 100,
-          },
-        ],
-        taxRate: 0,
-      });
+    const invoice = await caller.create({
+      customerId: seed.customer.id,
+      type: 'INVOICE',
+      items: [
+        {
+          productId: seed.product.id,
+          locationId: seed.location.id,
+          quantity: 3,
+          unitPrice: 100,
+        },
+      ],
+      taxRate: 0,
+    });
 
-      expect(invoice.status).toBe('ISSUED');
+    expect(invoice.status).toBe('ISSUED');
 
-      const movements = await testDb.inventoryMovement.findMany({
-        where: { movementType: 'OUT' },
-      });
+    const movements = await testDb.inventoryMovement.findMany({
+      where: { movementType: 'OUT' },
+    });
 
-      expect(movements).toHaveLength(1);
-      expect(movements[0]!.quantity).toBe(-3);
-      expect(movements[0]!.referenceType).toBe('INVOICE');
-      // Falla: actual = 'FAC-00001' (invoiceNumber), esperado = invoice.id (UUID)
-      expect(movements[0]!.referenceId).toBe(invoice.id);
-    },
-  );
+    expect(movements).toHaveLength(1);
+    expect(movements[0]!.quantity).toBe(-3);
+    expect(movements[0]!.referenceType).toBe('INVOICE');
+    expect(movements[0]!.referenceId).toBe(invoice.id);
+  });
 
   it('genera exactamente un OUT movement por línea de INVOICE (movementType y quantity)', async () => {
     const caller = createInvoicingCaller(makeCtx(testDb, seed.adminUser.id));
