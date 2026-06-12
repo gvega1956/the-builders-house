@@ -16,7 +16,9 @@ const VALID_REFERENCE_TYPES: Record<string, string[]> = {
 const movementCreateSchema = z
   .object({
     productId: z.string().cuid(),
-    locationId: z.string().cuid(),
+    // locationId OR warehouseId — warehouseId auto-crea la productLocation si no existe
+    locationId: z.string().cuid().optional(),
+    warehouseId: z.string().cuid().optional(),
     destinationLocationId: z.string().cuid().optional(),
     movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']),
     quantity: z.number().int().refine((n) => n !== 0, 'La cantidad no puede ser cero'),
@@ -27,7 +29,7 @@ const movementCreateSchema = z
     gpsLat: z.number().optional(),
     gpsLng: z.number().optional(),
   })
-  .superRefine(({ movementType, quantity, referenceType, destinationLocationId, locationId }, ctx) => {
+  .superRefine(({ movementType, quantity, referenceType, destinationLocationId, locationId, warehouseId }, ctx) => {
     const mustBePositive = ['IN', 'RETURN'];
     const mustBeNegative = ['OUT', 'DAMAGE'];
 
@@ -47,20 +49,20 @@ const movementCreateSchema = z
       });
     }
 
+    // TRANSFER siempre necesita locationId explícito (no auto-create)
+    if (movementType === 'TRANSFER' && !locationId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['locationId'], message: 'TRANSFER requiere locationId (ubicación origen)' });
+    }
     if (movementType === 'TRANSFER' && !destinationLocationId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['destinationLocationId'],
-        message: 'TRANSFER requiere destinationLocationId (ubicación destino)',
-      });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['destinationLocationId'], message: 'TRANSFER requiere destinationLocationId (ubicación destino)' });
+    }
+    if (movementType === 'TRANSFER' && destinationLocationId && destinationLocationId === locationId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['destinationLocationId'], message: 'La ubicación destino debe ser diferente a la ubicación origen' });
     }
 
-    if (movementType === 'TRANSFER' && destinationLocationId && destinationLocationId === locationId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['destinationLocationId'],
-        message: 'La ubicación destino debe ser diferente a la ubicación origen',
-      });
+    // Para no-TRANSFER: se requiere locationId O warehouseId
+    if (movementType !== 'TRANSFER' && !locationId && !warehouseId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['locationId'], message: 'Se requiere locationId o warehouseId' });
     }
 
     // C-2: cross-validate movementType / referenceType
@@ -139,7 +141,7 @@ export const movementsRouter = createTRPCRouter({
       if (movementType === 'TRANSFER') {
         const { id: createdId } = await ctx.db.$transaction(async (tx) => {
           // Lock ambas ubicaciones en orden ascendente para prevenir deadlocks
-          const [first, second] = [input.locationId, destinationLocationId!].sort();
+          const [first, second] = [input.locationId!, destinationLocationId!].sort();
           // C-1: fetch reservedQuantity alongside quantityOnHand
           const locRows = await tx.$queryRaw<LocationRow[]>`
             SELECT id, "productId", "quantityOnHand", "reservedQuantity"
@@ -188,7 +190,7 @@ export const movementsRouter = createTRPCRouter({
 
           // OUT en origen (cantidad negativa)
           const outMovement = await tx.inventoryMovement.create({
-            data: { ...commonData, locationId: input.locationId, quantity: -qty },
+            data: { ...commonData, locationId: input.locationId!, quantity: -qty },
           });
 
           // IN en destino (cantidad positiva)
@@ -197,7 +199,7 @@ export const movementsRouter = createTRPCRouter({
           });
 
           await tx.productLocation.update({
-            where: { id: input.locationId },
+            where: { id: input.locationId! },
             data: { quantityOnHand: { decrement: qty } },
           });
 
@@ -212,13 +214,34 @@ export const movementsRouter = createTRPCRouter({
         return ctx.db.inventoryMovement.findUnique({ where: { id: createdId } });
       }
 
+      let resolvedLocationId: string;
+
       const movement = await ctx.db.$transaction(async (tx) => {
+        // Si viene warehouseId pero no locationId, auto-crea la productLocation
+        if (!input.locationId && input.warehouseId) {
+          const loc = await tx.productLocation.upsert({
+            where: { productId_warehouseId: { productId: input.productId, warehouseId: input.warehouseId } },
+            update: {},
+            create: {
+              productId: input.productId,
+              warehouseId: input.warehouseId,
+              locationCode: 'PRINCIPAL',
+              quantityOnHand: 0,
+              reservedQuantity: 0,
+              backorderQuantity: 0,
+            },
+          });
+          resolvedLocationId = loc.id;
+        } else {
+          resolvedLocationId = input.locationId!;
+        }
+
         // Pessimistic lock — adquiere lock exclusivo ANTES de leer el stock
         // C-1: fetch reservedQuantity for accurate available-stock check
         const rows = await tx.$queryRaw<LocationRow[]>`
           SELECT id, "productId", "quantityOnHand", "reservedQuantity"
           FROM product_locations
-          WHERE id = ${input.locationId}
+          WHERE id = ${resolvedLocationId}
           FOR UPDATE
         `;
 
@@ -257,17 +280,25 @@ export const movementsRouter = createTRPCRouter({
           }
         }
 
-        const { destinationLocationId: _dest, ...inputWithoutDest } = input;
         const created = await tx.inventoryMovement.create({
           data: {
-            ...inputWithoutDest,
+            productId: input.productId,
+            locationId: resolvedLocationId,
+            movementType: input.movementType,
+            quantity: input.quantity,
+            referenceType: input.referenceType,
+            referenceId: input.referenceId,
+            photoUrl: input.photoUrl,
+            notes: input.notes,
+            gpsLat: input.gpsLat,
+            gpsLng: input.gpsLng,
             userId: ctx.session!.user!.id!,
             ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
           },
         });
 
         await tx.productLocation.update({
-          where: { id: input.locationId },
+          where: { id: resolvedLocationId },
           data: { quantityOnHand: { increment: input.quantity } },
         });
 
@@ -280,7 +311,7 @@ export const movementsRouter = createTRPCRouter({
         {
           movementId: movement!.id,
           productId: input.productId,
-          locationId: input.locationId,
+          locationId: resolvedLocationId!,
           movementType: input.movementType,
           quantity: input.quantity,
           userId: ctx.session!.user!.id!,

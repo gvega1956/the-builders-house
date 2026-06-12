@@ -47,10 +47,11 @@ export function InventoryClient() {
   const [deactivateTarget, setDeactivateTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Stock entry / adjustment state
-  const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId: string; currentStock: number } | null>(null);
+  const [stockProduct, setStockProduct] = useState<{ id: string; sku: string; name: string; locationId?: string; currentStock: number } | null>(null);
   const [stockMode, setStockMode] = useState<'IN' | 'ADJUSTMENT'>('IN');
   const [stockQty, setStockQty] = useState('');
   const [stockNotes, setStockNotes] = useState('');
+  const [stockWarehouseId, setStockWarehouseId] = useState('');
 
   const { data, isLoading, refetch } = trpc.products.list.useQuery({
     search: search || undefined,
@@ -203,11 +204,19 @@ export function InventoryClient() {
     setStockMode('IN');
     setStockQty('');
     setStockNotes('');
+    setStockWarehouseId('');
   }
 
   function openStockModal(p: NonNullable<typeof data>['products'][0], mode: 'IN' | 'ADJUSTMENT' = 'IN') {
-    if (!p.locations[0]) return;
-    setStockProduct({ id: p.id, sku: p.sku, name: p.name, locationId: p.locations[0].id, currentStock: p.totalStock });
+    setStockProduct({
+      id: p.id,
+      sku: p.sku,
+      name: p.name,
+      locationId: p.locations[0]?.id,
+      currentStock: p.totalStock,
+    });
+    // Pre-selecciona el almacén si ya tiene ubicación, o el primero disponible
+    setStockWarehouseId(p.locations[0]?.warehouseId ?? (warehouses?.[0]?.id ?? ''));
     setStockMode(mode);
     setStockQty('');
     setStockNotes('');
@@ -220,11 +229,20 @@ export function InventoryClient() {
     const raw = parseInt(stockQty);
     if (!raw || raw === 0) { setError('Ingresa una cantidad distinta de 0'); return; }
 
+    if (!stockProduct.locationId && !stockWarehouseId) {
+      setError('Selecciona un almacén para registrar este movimiento');
+      return;
+    }
+
+    const locationPayload = stockProduct.locationId
+      ? { locationId: stockProduct.locationId }
+      : { warehouseId: stockWarehouseId };
+
     if (stockMode === 'IN') {
       if (raw < 0) { setError('Para entradas usa cantidad positiva. Para correcciones usa el botón de ajuste.'); return; }
       stockIn.mutate({
         productId: stockProduct.id,
-        locationId: stockProduct.locationId,
+        ...locationPayload,
         movementType: 'IN',
         quantity: raw,
         referenceType: 'DIRECT_RECEIPT',
@@ -234,7 +252,7 @@ export function InventoryClient() {
       // ADJUSTMENT — acepta positivo (corrección hacia arriba) o negativo (corrección hacia abajo)
       stockIn.mutate({
         productId: stockProduct.id,
-        locationId: stockProduct.locationId,
+        ...locationPayload,
         movementType: 'ADJUSTMENT',
         quantity: raw,
         referenceType: 'ADJUSTMENT',
@@ -775,9 +793,32 @@ export function InventoryClient() {
               <div className="font-mono text-xs font-bold" style={{ color: brand.orange[500] }}>{stockProduct.sku}</div>
               <div className="font-medium mt-0.5" style={{ color: brand.navy[900] }}>{stockProduct.name}</div>
               <div className="text-xs mt-1" style={{ color: '#64748B' }}>
-                Stock actual: <span className="font-semibold" style={{ color: brand.navy[800] }}>{stockProduct.currentStock}</span> unidades
+                {stockProduct.locationId
+                  ? <>Stock actual: <span className="font-semibold" style={{ color: brand.navy[800] }}>{stockProduct.currentStock}</span> unidades</>
+                  : <span style={{ color: '#B45309', fontWeight: 600 }}>Sin ubicación — se asignará al registrar</span>
+                }
               </div>
             </div>
+
+            {/* Selector de almacén cuando el producto no tiene ubicación aún */}
+            {!stockProduct.locationId && (
+              <div className="mb-3">
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                  Almacén destino *
+                </label>
+                <select
+                  value={stockWarehouseId}
+                  onChange={(e) => setStockWarehouseId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none"
+                  style={{ color: brand.navy[900] }}
+                >
+                  <option value="">Seleccionar almacén...</option>
+                  {warehouses?.map((w) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {stockMode === 'ADJUSTMENT' && (
               <div className="mb-3 px-3 py-2 rounded-xl text-xs" style={{ backgroundColor: '#FFFBEB', border: '1px solid #FDE68A', color: '#92400E' }}>
@@ -828,7 +869,7 @@ export function InventoryClient() {
               </button>
               <button
                 onClick={handleStockSubmit}
-                disabled={stockIn.isPending || !stockQty}
+                disabled={stockIn.isPending || !stockQty || (!stockProduct.locationId && !stockWarehouseId)}
                 className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
                 style={{ background: stockMode === 'IN'
                   ? 'linear-gradient(135deg, #16A34A, #15803D)'
