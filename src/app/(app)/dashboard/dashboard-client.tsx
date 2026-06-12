@@ -443,7 +443,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
             </div>
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: brand.orange[500] }} />
+                <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: '#0284C7' }} />
                 <span className="text-slate-600">Ventas</span>
               </span>
               <span className="flex items-center gap-1.5">
@@ -456,8 +456,8 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
             <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: -10 }}>
               <defs>
                 <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={brand.orange[500]} stopOpacity={0.28} />
-                  <stop offset="100%" stopColor={brand.orange[500]} stopOpacity={0} />
+                  <stop offset="0%" stopColor="#0284C7" stopOpacity={0.28} />
+                  <stop offset="100%" stopColor="#0284C7" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" vertical={false} />
@@ -474,7 +474,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
                 }}
               />
               <Area type="monotone" dataKey="meta" stroke="#CBD5E1" fill="none" strokeWidth={1.5} strokeDasharray="4 4" />
-              <Area type="monotone" dataKey="ventas" stroke={brand.orange[500]} fill="url(#colorVentas)" strokeWidth={2.5} />
+              <Area type="monotone" dataKey="ventas" stroke="#0284C7" fill="url(#colorVentas)" strokeWidth={2.5} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
