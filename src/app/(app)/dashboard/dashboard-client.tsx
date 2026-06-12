@@ -41,12 +41,12 @@ const kpiAccent = {
 const kpiColorStyles = {
   blue: {
     card: {
-      background: '#EFF6FF',
-      border: '1px solid rgba(59,130,246,0.24)',
-      boxShadow: make3dShadow('rgba(29,78,216,0.18)', 'rgba(59,130,246,0.08)'),
+      background: '#DBEAFE',
+      border: '1px solid rgba(37,99,235,0.40)',
+      boxShadow: make3dShadow('rgba(29,78,216,0.26)', 'rgba(59,130,246,0.14)'),
     } as React.CSSProperties,
-    icon: { backgroundColor: '#DBEAFE' },
-    iconColor: '#2563EB',
+    icon: { backgroundColor: '#BFDBFE' },
+    iconColor: '#1D4ED8',
   },
   green: {
     card: {
@@ -68,12 +68,12 @@ const kpiColorStyles = {
   },
   purple: {
     card: {
-      background: '#F5F3FF',
-      border: '1px solid rgba(139,92,246,0.28)',
-      boxShadow: make3dShadow('rgba(91,33,182,0.18)', 'rgba(139,92,246,0.09)'),
+      background: '#EDE9FE',
+      border: '1px solid rgba(109,40,217,0.40)',
+      boxShadow: make3dShadow('rgba(91,33,182,0.26)', 'rgba(139,92,246,0.14)'),
     } as React.CSSProperties,
-    icon: { backgroundColor: '#EDE9FE' },
-    iconColor: '#7C3AED',
+    icon: { backgroundColor: '#DDD6FE' },
+    iconColor: '#6D28D9',
   },
 };
 
