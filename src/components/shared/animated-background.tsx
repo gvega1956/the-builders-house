@@ -3,15 +3,15 @@
 export function AnimatedBackground() {
   return (
     <>
-      {/* Base gradient pegada al layout, no fixed */}
+      {/* Base — navy azul profundo */}
       <div
         className="absolute inset-0 -z-10"
         style={{
-          background: 'linear-gradient(145deg, #EDF2FF 0%, #F5F0FF 25%, #FFF0E8 60%, #FFF7F0 100%)',
+          background: 'linear-gradient(145deg, #0F1E38 0%, #1A2D4F 30%, #1E3460 65%, #0F1E38 100%)',
         }}
       />
 
-      {/* ── BLOB 1 — naranja fuerte, arriba derecha ── */}
+      {/* ── BLOB 1 — naranja marca, arriba derecha ── */}
       <div
         className="absolute -z-10 rounded-full"
         style={{
@@ -19,78 +19,78 @@ export function AnimatedBackground() {
           height: 560,
           top: -180,
           right: -120,
-          background: 'radial-gradient(circle at 40% 40%, rgba(236,99,38,0.38) 0%, rgba(244,124,68,0.22) 40%, transparent 70%)',
+          background: 'radial-gradient(circle at 40% 40%, rgba(236,99,38,0.32) 0%, rgba(244,124,68,0.16) 40%, transparent 70%)',
           filter: 'blur(48px)',
           animation: 'blob1 16s ease-in-out infinite',
         }}
       />
 
-      {/* ── BLOB 2 — navy, abajo izquierda ── */}
+      {/* ── BLOB 2 — azul marino oscuro, abajo izquierda ── */}
       <div
         className="absolute -z-10 rounded-full"
         style={{
-          width: 640,
-          height: 640,
-          bottom: -200,
-          left: -160,
-          background: 'radial-gradient(circle at 55% 55%, rgba(26,45,79,0.28) 0%, rgba(42,63,102,0.16) 45%, transparent 70%)',
+          width: 680,
+          height: 680,
+          bottom: -220,
+          left: -180,
+          background: 'radial-gradient(circle at 55% 55%, rgba(10,22,40,0.80) 0%, rgba(15,30,56,0.55) 45%, transparent 70%)',
           filter: 'blur(56px)',
           animation: 'blob2 20s ease-in-out infinite',
         }}
       />
 
-      {/* ── BLOB 3 — naranja claro, centro izquierda ── */}
-      <div
-        className="absolute -z-10 rounded-full"
-        style={{
-          width: 440,
-          height: 440,
-          top: '28%',
-          left: '18%',
-          background: 'radial-gradient(circle at 50% 50%, rgba(253,228,212,0.80) 0%, rgba(236,99,38,0.18) 50%, transparent 72%)',
-          filter: 'blur(36px)',
-          animation: 'blob3 13s ease-in-out infinite',
-        }}
-      />
-
-      {/* ── BLOB 4 — lila/azul, arriba centro ── */}
-      <div
-        className="absolute -z-10 rounded-full"
-        style={{
-          width: 380,
-          height: 380,
-          top: -60,
-          left: '38%',
-          background: 'radial-gradient(circle at 50% 50%, rgba(168,148,255,0.22) 0%, rgba(139,120,240,0.12) 50%, transparent 72%)',
-          filter: 'blur(40px)',
-          animation: 'blob4 22s ease-in-out infinite',
-        }}
-      />
-
-      {/* ── BLOB 5 — naranja, abajo derecha ── */}
+      {/* ── BLOB 3 — azul medio, centro izquierda ── */}
       <div
         className="absolute -z-10 rounded-full"
         style={{
           width: 480,
           height: 480,
-          bottom: -100,
-          right: '8%',
-          background: 'radial-gradient(circle at 45% 45%, rgba(236,99,38,0.24) 0%, rgba(244,124,68,0.12) 50%, transparent 70%)',
+          top: '28%',
+          left: '14%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(59,130,246,0.22) 0%, rgba(30,64,175,0.14) 50%, transparent 72%)',
+          filter: 'blur(40px)',
+          animation: 'blob3 13s ease-in-out infinite',
+        }}
+      />
+
+      {/* ── BLOB 4 — azul cielo brillante, arriba centro ── */}
+      <div
+        className="absolute -z-10 rounded-full"
+        style={{
+          width: 420,
+          height: 420,
+          top: -80,
+          left: '35%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(96,165,250,0.18) 0%, rgba(59,130,246,0.10) 55%, transparent 72%)',
+          filter: 'blur(44px)',
+          animation: 'blob4 22s ease-in-out infinite',
+        }}
+      />
+
+      {/* ── BLOB 5 — naranja sutil, abajo derecha ── */}
+      <div
+        className="absolute -z-10 rounded-full"
+        style={{
+          width: 460,
+          height: 460,
+          bottom: -80,
+          right: '6%',
+          background: 'radial-gradient(circle at 45% 45%, rgba(236,99,38,0.20) 0%, rgba(244,124,68,0.10) 55%, transparent 70%)',
           filter: 'blur(44px)',
           animation: 'blob5 18s ease-in-out infinite',
         }}
       />
 
-      {/* ── BLOB 6 — azul cielo, centro derecha ── */}
+      {/* ── BLOB 6 — azul índigo, centro derecha ── */}
       <div
         className="absolute -z-10 rounded-full"
         style={{
-          width: 300,
-          height: 300,
-          top: '42%',
-          right: '22%',
-          background: 'radial-gradient(circle at 50% 50%, rgba(56,132,255,0.16) 0%, rgba(96,165,250,0.08) 55%, transparent 72%)',
-          filter: 'blur(32px)',
+          width: 340,
+          height: 340,
+          top: '40%',
+          right: '18%',
+          background: 'radial-gradient(circle at 50% 50%, rgba(99,102,241,0.18) 0%, rgba(79,70,229,0.10) 55%, transparent 72%)',
+          filter: 'blur(36px)',
           animation: 'blob6 15s ease-in-out infinite',
         }}
       />

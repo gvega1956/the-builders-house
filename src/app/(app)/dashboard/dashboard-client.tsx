@@ -16,47 +16,85 @@ import { formatCurrency } from '@/lib/utils';
 import { trpc } from '@/lib/trpc';
 import { glass } from '@/lib/ui';
 
+// Sombra 3D base: resalte interior arriba + suelo oscuro abajo = efecto relieve
+const kpi3dShadow = [
+  '0 1px 0 rgba(255,255,255,0.16) inset',   // resalte superior interior
+  '0 -1px 0 rgba(0,0,0,0.14) inset',         // sombra inferior interior
+  '0 5px 0 rgba(6,12,28,0.62)',               // suelo 3D mismo tono que fondo navy
+  '0 14px 30px rgba(0,0,0,0.32)',             // sombra ambiente
+  '0 2px 8px rgba(0,0,0,0.20)',               // sombra cercana
+].join(', ');
+
 const kpiBase = {
-  background: 'linear-gradient(160deg, rgba(255,255,255,0.88) 0%, rgba(241,245,252,0.82) 100%)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: '1.5px solid rgba(255,255,255,0.95)',
-  boxShadow: [
-    '0 2px 0 rgba(255,255,255,1) inset',
-    '0 12px 28px rgba(10,22,40,0.10)',
-    '0 2px 6px rgba(10,22,40,0.06)',
-    '4px 4px 12px rgba(10,22,40,0.06)',
-  ].join(', '),
+  background: 'linear-gradient(160deg, rgba(255,255,255,0.13) 0%, rgba(255,255,255,0.08) 100%)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  border: '1.5px solid rgba(255,255,255,0.22)',
+  boxShadow: kpi3dShadow,
 } as React.CSSProperties;
 
 const kpiAccent = {
-  background: 'linear-gradient(160deg, rgba(255,240,230,0.95) 0%, rgba(254,228,212,0.88) 100%)',
-  backdropFilter: 'blur(16px)',
-  WebkitBackdropFilter: 'blur(16px)',
-  border: `1.5px solid rgba(236,99,38,0.35)`,
+  background: 'linear-gradient(160deg, rgba(236,99,38,0.30) 0%, rgba(209,83,30,0.22) 100%)',
+  backdropFilter: 'blur(20px)',
+  WebkitBackdropFilter: 'blur(20px)',
+  border: '1.5px solid rgba(236,99,38,0.58)',
   boxShadow: [
-    '0 2px 0 rgba(255,255,255,0.90) inset',
-    `0 12px 28px rgba(236,99,38,0.16)`,
-    `0 2px 6px rgba(236,99,38,0.10)`,
-    '4px 4px 12px rgba(10,22,40,0.06)',
+    '0 1px 0 rgba(255,190,130,0.22) inset',    // resalte naranja interior
+    '0 -1px 0 rgba(100,28,0,0.18) inset',       // sombra inferior interior
+    '0 5px 0 rgba(130,38,0,0.58)',               // suelo 3D naranja oscuro
+    '0 14px 30px rgba(236,99,38,0.24)',          // halo naranja
+    '0 2px 8px rgba(0,0,0,0.20)',
   ].join(', '),
 } as React.CSSProperties;
 
 const kpiColorStyles = {
   blue: {
-    card: { ...kpiBase, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.25)' } as React.CSSProperties,
-    icon: { backgroundColor: 'rgba(59,130,246,0.12)' },
-    iconColor: '#3B82F6',
+    card: {
+      ...kpiBase,
+      background: 'rgba(59,130,246,0.20)',
+      border: '1.5px solid rgba(59,130,246,0.48)',
+      boxShadow: [
+        '0 1px 0 rgba(147,197,253,0.18) inset',
+        '0 -1px 0 rgba(0,0,0,0.14) inset',
+        '0 5px 0 rgba(20,50,130,0.60)',
+        '0 14px 30px rgba(0,0,0,0.30)',
+        '0 2px 8px rgba(0,0,0,0.18)',
+      ].join(', '),
+    } as React.CSSProperties,
+    icon: { backgroundColor: 'rgba(59,130,246,0.28)' },
+    iconColor: '#93C5FD',
   },
   green: {
-    card: { ...kpiBase, background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.25)' } as React.CSSProperties,
-    icon: { backgroundColor: 'rgba(16,185,129,0.12)' },
-    iconColor: '#10B981',
+    card: {
+      ...kpiBase,
+      background: 'rgba(16,185,129,0.18)',
+      border: '1.5px solid rgba(16,185,129,0.48)',
+      boxShadow: [
+        '0 1px 0 rgba(110,231,183,0.18) inset',
+        '0 -1px 0 rgba(0,0,0,0.14) inset',
+        '0 5px 0 rgba(5,90,55,0.60)',
+        '0 14px 30px rgba(0,0,0,0.30)',
+        '0 2px 8px rgba(0,0,0,0.18)',
+      ].join(', '),
+    } as React.CSSProperties,
+    icon: { backgroundColor: 'rgba(16,185,129,0.28)' },
+    iconColor: '#6EE7B7',
   },
   amber: {
-    card: { ...kpiBase, background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.25)' } as React.CSSProperties,
-    icon: { backgroundColor: 'rgba(245,158,11,0.12)' },
-    iconColor: '#F59E0B',
+    card: {
+      ...kpiBase,
+      background: 'rgba(245,158,11,0.18)',
+      border: '1.5px solid rgba(245,158,11,0.48)',
+      boxShadow: [
+        '0 1px 0 rgba(252,211,77,0.18) inset',
+        '0 -1px 0 rgba(0,0,0,0.14) inset',
+        '0 5px 0 rgba(110,62,0,0.60)',
+        '0 14px 30px rgba(0,0,0,0.30)',
+        '0 2px 8px rgba(0,0,0,0.18)',
+      ].join(', '),
+    } as React.CSSProperties,
+    icon: { backgroundColor: 'rgba(245,158,11,0.28)' },
+    iconColor: '#FCD34D',
   },
 };
 
@@ -77,24 +115,28 @@ function KPICard({
 
   return (
     <div
-      className="rounded-2xl p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-lg cursor-default"
+      className="rounded-2xl p-5 transition-all duration-200 hover:-translate-y-1 cursor-default"
       style={cardStyle}
     >
       <div className="flex items-start justify-between mb-3">
         <div
           className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={colorStyle ? colorStyle.icon : { backgroundColor: accent ? `rgba(236,99,38,0.12)` : `rgba(10,22,40,0.07)` }}
+          style={colorStyle
+            ? colorStyle.icon
+            : { backgroundColor: accent ? 'rgba(236,99,38,0.28)' : 'rgba(255,255,255,0.16)' }}
         >
           <Icon
             size={17}
             strokeWidth={2}
-            style={{ color: colorStyle ? colorStyle.iconColor : accent ? brand.orange[500] : brand.navy[700] }}
+            style={{ color: colorStyle ? colorStyle.iconColor : accent ? '#FDB57A' : 'rgba(255,255,255,0.85)' }}
           />
         </div>
         {change && (
           <span
             className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg ${
-              trend === 'up' ? 'text-emerald-700 bg-emerald-50' : 'text-rose-600 bg-rose-50'
+              trend === 'up'
+                ? 'text-emerald-300 bg-emerald-500/20'
+                : 'text-rose-300 bg-rose-500/20'
             }`}
           >
             {trend === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
@@ -104,11 +146,11 @@ function KPICard({
       </div>
       <div
         className="text-2xl font-bold tracking-tight mb-1"
-        style={{ color: accent ? brand.orange[600] : brand.navy[950] }}
+        style={{ color: accent ? '#FDB57A' : 'rgba(255,255,255,0.95)' }}
       >
         {prefix}{value}
       </div>
-      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.52)' }}>{label}</div>
     </div>
   );
 }
@@ -194,15 +236,15 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           >
             {dateFormatted}
           </div>
-          <h1 className="text-3xl font-bold tracking-tight" style={{ color: brand.navy[950] }}>
+          <h1 className="text-3xl font-bold tracking-tight" style={{ color: 'rgba(255,255,255,0.96)' }}>
             {greeting}, {userName}
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.52)' }}>
             {kpis?.invoiceCount ?? 0} facturas hoy · {' '}
             {adjustmentsWithoutPhoto > 0 ? (
-              <span className="font-semibold text-rose-600">{adjustmentsWithoutPhoto} ajuste(s) sin foto</span>
+              <span className="font-semibold text-rose-300">{adjustmentsWithoutPhoto} ajuste(s) sin foto</span>
             ) : (
-              <span className="font-semibold text-emerald-600">Auditoría al día</span>
+              <span className="font-semibold text-emerald-300">Auditoría al día</span>
             )}
           </p>
         </div>
