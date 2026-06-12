@@ -553,7 +553,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
                     fontSize: '12px',
                   }}
                 />
-                <Bar dataKey="value" fill={brand.navy[800]} radius={[0, 6, 6, 0]} />
+                <Bar dataKey="value" fill="#4B91F7" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
