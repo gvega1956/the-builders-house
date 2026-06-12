@@ -475,11 +475,32 @@ export const invoicingRouter = createTRPCRouter({
             include: { items: true },
           });
 
+          // B2: reserve only available stock; track deficit as backorder
           for (const item of items) {
+            const loc = lockedLocations.get(item.locationId!)!;
+            const available = calculateAvailableStock(loc);
+            const toReserve = Math.min(available, item.quantity);
+            const toBackorder = item.quantity - toReserve;
+
             await tx.productLocation.update({
               where: { id: item.locationId! },
-              data: { reservedQuantity: { increment: item.quantity } },
+              data: {
+                reservedQuantity: { increment: toReserve },
+                backorderQuantity: { increment: toBackorder },
+              },
             });
+
+            if (toBackorder > 0) {
+              const invoiceItem = created.items.find(
+                (ci) => ci.productId === item.productId && ci.locationId === item.locationId,
+              );
+              if (invoiceItem) {
+                await tx.invoiceItem.update({
+                  where: { id: invoiceItem.id },
+                  data: { quantityBackordered: toBackorder },
+                });
+              }
+            }
           }
 
           await tx.auditLog.create({
@@ -799,9 +820,14 @@ export const invoicingRouter = createTRPCRouter({
         if (invoice.type === 'INVOICE' && invoice.status === 'PENDING_AUTHORIZATION') {
           for (const item of invoice.items) {
             if (!item.locationId) continue;
+            // B2: revert only what was actually reserved (quantity - backordered) and the backorder portion
+            const reserved = item.quantity - item.quantityBackordered;
             await tx.productLocation.update({
               where: { id: item.locationId },
-              data: { reservedQuantity: { decrement: item.quantity } },
+              data: {
+                reservedQuantity: { decrement: reserved },
+                backorderQuantity: { decrement: item.quantityBackordered },
+              },
             });
           }
         }
@@ -948,11 +974,13 @@ export const invoicingRouter = createTRPCRouter({
             },
           });
 
+          // B2: release only what was actually reserved; clear backorder portion separately
           await tx.productLocation.update({
             where: { id: item.locationId! },
             data: {
               quantityOnHand: { decrement: item.quantity },
-              reservedQuantity: { decrement: item.quantity },
+              reservedQuantity: { decrement: item.quantity - item.quantityBackordered },
+              backorderQuantity: { decrement: item.quantityBackordered },
             },
           });
         }
@@ -1077,11 +1105,13 @@ export const invoicingRouter = createTRPCRouter({
               ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
             },
           });
+          // B2: release only what was actually reserved; clear backorder portion separately
           await tx.productLocation.update({
             where: { id: item.locationId! },
             data: {
               quantityOnHand: { decrement: item.quantity },
-              reservedQuantity: { decrement: item.quantity },
+              reservedQuantity: { decrement: item.quantity - item.quantityBackordered },
+              backorderQuantity: { decrement: item.quantityBackordered },
             },
           });
         }

@@ -321,6 +321,7 @@ export const purchasesRouter = createTRPCRouter({
         const receivedSummary: Array<{
           itemId: string;
           productId: string;
+          locationId: string;
           quantityReceived: number;
         }> = [];
 
@@ -397,8 +398,104 @@ export const purchasesRouter = createTRPCRouter({
           receivedSummary.push({
             itemId: recv.itemId,
             productId: item.productId,
+            locationId: resolvedLocationId,
             quantityReceived: recv.quantityReceived,
           });
+        }
+
+        // B3: Auto-fulfill PENDING_AUTHORIZATION invoices for received products
+        const processedInvoiceIds = new Set<string>();
+        for (const received of receivedSummary) {
+          const loc = await tx.productLocation.findUnique({
+            where: { id: received.locationId },
+            select: { quantityOnHand: true, reservedQuantity: true, backorderQuantity: true },
+          });
+          if (!loc || loc.backorderQuantity === 0) continue;
+
+          const pendingItems = await tx.invoiceItem.findMany({
+            where: {
+              productId: received.productId,
+              locationId: received.locationId,
+              quantityBackordered: { gt: 0 },
+              invoice: { status: 'PENDING_AUTHORIZATION' },
+            },
+            include: { invoice: { select: { id: true, customerId: true, total: true, createdAt: true } } },
+            orderBy: { invoice: { createdAt: 'asc' } },
+          });
+
+          let currentOnHand = loc.quantityOnHand;
+          let currentReserved = loc.reservedQuantity;
+          let currentBackorder = loc.backorderQuantity;
+
+          for (const pendingItem of pendingItems) {
+            const available = currentOnHand - currentReserved;
+            if (available < pendingItem.quantityBackordered) continue;
+
+            await tx.inventoryMovement.create({
+              data: {
+                productId: pendingItem.productId,
+                locationId: received.locationId,
+                movementType: 'OUT',
+                quantity: -pendingItem.quantity,
+                referenceType: 'INVOICE',
+                referenceId: pendingItem.invoiceId,
+                userId: ctx.session!.user!.id!,
+                notes: `Auto-cumplimiento por recepción de OC ${order.poNumber}`,
+                ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+              },
+            });
+
+            const reservedPortion = pendingItem.quantity - pendingItem.quantityBackordered;
+            currentOnHand -= pendingItem.quantity;
+            currentReserved -= reservedPortion;
+            currentBackorder -= pendingItem.quantityBackordered;
+
+            await tx.productLocation.update({
+              where: { id: received.locationId },
+              data: {
+                quantityOnHand: { decrement: pendingItem.quantity },
+                reservedQuantity: { decrement: reservedPortion },
+                backorderQuantity: { decrement: pendingItem.quantityBackordered },
+              },
+            });
+
+            await tx.invoiceItem.update({
+              where: { id: pendingItem.id },
+              data: { quantityBackordered: 0 },
+            });
+
+            // Check if all items of this invoice now have quantityBackordered = 0
+            if (!processedInvoiceIds.has(pendingItem.invoiceId)) {
+              const remainingBackorder = await tx.invoiceItem.count({
+                where: { invoiceId: pendingItem.invoiceId, quantityBackordered: { gt: 0 } },
+              });
+              if (remainingBackorder === 0) {
+                processedInvoiceIds.add(pendingItem.invoiceId);
+                await tx.invoice.update({
+                  where: { id: pendingItem.invoiceId },
+                  data: { status: 'ISSUED' },
+                });
+                await tx.customer.update({
+                  where: { id: pendingItem.invoice.customerId },
+                  data: { currentBalance: { increment: pendingItem.invoice.total } },
+                });
+                await tx.auditLog.create({
+                  data: {
+                    userId: ctx.session!.user!.id!,
+                    action: 'AUTO_FULFILL',
+                    entityType: 'Invoice',
+                    entityId: pendingItem.invoiceId,
+                    newValues: {
+                      reason: `Stock recibido por OC ${order.poNumber}`,
+                      previousStatus: 'PENDING_AUTHORIZATION',
+                      newStatus: 'ISSUED',
+                    } as Prisma.InputJsonValue,
+                    ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
+                  },
+                });
+              }
+            }
+          }
         }
 
         const updatedItems = await tx.purchaseOrderItem.findMany({
