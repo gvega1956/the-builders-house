@@ -361,7 +361,7 @@ export const purchasesRouter = createTRPCRouter({
               movementType: 'IN',
               quantity: recv.quantityReceived,
               referenceType: 'PURCHASE_ORDER',
-              referenceId: order.poNumber,
+              referenceId: order.id,
               userId: ctx.session!.user!.id!,
               ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
             },

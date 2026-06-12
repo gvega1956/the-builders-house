@@ -178,7 +178,7 @@ describe('i — transfer lifecycle', () => {
     expect(locOriginAfter.reservedQuantity).toBe(0);
     expect(locDestAfter.quantityOnHand).toBe(4);
 
-    // Deben existir exactamente 2 movimientos TRANSFER con el mismo referenceId
+    // Deben existir exactamente 2 movimientos TRANSFER con referenceId = transfer.id (UUID)
     const movements = await testDb.inventoryMovement.findMany({
       where: { movementType: 'TRANSFER' },
       orderBy: { quantity: 'asc' },
@@ -186,6 +186,9 @@ describe('i — transfer lifecycle', () => {
     expect(movements).toHaveLength(2);
     expect(movements[0]!.quantity).toBe(-4); // salida de origen
     expect(movements[1]!.quantity).toBe(4);  // entrada en destino
+    // Ambos legs comparten el UUID del transfer como referenceId
+    expect(movements[0]!.referenceId).toBe(transfer.id);
+    expect(movements[1]!.referenceId).toBe(transfer.id);
     expect(movements[0]!.referenceId).toBe(movements[1]!.referenceId);
   });
 
@@ -255,13 +258,14 @@ describe('j — purchase receive', () => {
       items: [{ itemId: poItem.id, quantityReceived: 6, locationId: seed.location.id }],
     });
 
-    // Debe existir un movimiento IN
+    // Debe existir un movimiento IN con referenceId = po.id (UUID)
     const inMovements = await testDb.inventoryMovement.findMany({
       where: { movementType: 'IN', productId: seed.product.id },
     });
     expect(inMovements).toHaveLength(1);
     expect(inMovements[0]!.quantity).toBe(6);
     expect(inMovements[0]!.referenceType).toBe('PURCHASE_ORDER');
+    expect(inMovements[0]!.referenceId).toBe(po.id);
 
     // quantityOnHand incrementado
     const locAfter = await testDb.productLocation.findUniqueOrThrow({

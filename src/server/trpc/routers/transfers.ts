@@ -210,7 +210,7 @@ export const transfersRouter = createTRPCRouter({
     }),
 
   // Destino confirma recepción — movimiento físico ocurre aquí.
-  // Crea DOS InventoryMovement tipo TRANSFER ligados por transferNumber.
+  // Crea DOS InventoryMovement tipo TRANSFER ligados por transfer.id (UUID).
   // Espeja exactamente el patrón de stock.transferStock.
   confirm: managerProcedure
     .input(z.object({ id: z.string().cuid() }))
@@ -302,7 +302,7 @@ export const transfersRouter = createTRPCRouter({
             data: { quantityOnHand: { increment: line.quantity } },
           });
 
-          // Two TRANSFER movements linked by transferNumber — mirrors stock.transferStock exactly
+          // Two TRANSFER movements linked by transfer.id (UUID) — mirrors stock.transferStock exactly
           await tx.inventoryMovement.create({
             data: {
               productId:     line.productId,
@@ -310,7 +310,7 @@ export const transfersRouter = createTRPCRouter({
               movementType:  'TRANSFER',
               quantity:      -line.quantity,
               referenceType: 'TRANSFER',
-              referenceId:   header.transferNumber,
+              referenceId:   header.id,
               userId:        ctx.session!.user!.id!,
               ipAddress:     ctx.req.headers.get('x-forwarded-for') ?? undefined,
             },
@@ -323,7 +323,7 @@ export const transfersRouter = createTRPCRouter({
               movementType:  'TRANSFER',
               quantity:      line.quantity,
               referenceType: 'TRANSFER',
-              referenceId:   header.transferNumber,
+              referenceId:   header.id,
               userId:        ctx.session!.user!.id!,
               ipAddress:     ctx.req.headers.get('x-forwarded-for') ?? undefined,
             },

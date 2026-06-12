@@ -188,7 +188,7 @@ describe('transfers.create — PENDING: reserva stock, sin movimientos físicos'
 
     // Zero InventoryMovements
     const movements = await db.inventoryMovement.findMany({
-      where: { referenceId: transfer.transferNumber },
+      where: { referenceId: transfer.id },
     });
     expect(movements).toHaveLength(0);
   });
@@ -222,7 +222,7 @@ describe('transfers.create — PENDING: reserva stock, sin movimientos físicos'
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('transfers.confirm — movimiento físico, 2 InventoryMovements, reserva liberada', () => {
-  it('TRF-03: confirm mueve stock, libera reserva, crea exactamente 2 TRANSFER movements ligados por transferNumber', async () => {
+  it('TRF-03: confirm mueve stock, libera reserva, crea exactamente 2 TRANSFER movements ligados por transfer.id', async () => {
     const manager = makeCaller(managerId, 'MANAGER');
     const qty = 30;
 
@@ -256,9 +256,9 @@ describe('transfers.confirm — movimiento físico, 2 InventoryMovements, reserv
     expect(destLoc).not.toBeNull();
     expect(destLoc!.quantityOnHand).toBe(30);
 
-    // Exactly 2 TRANSFER movements linked by the same referenceId
+    // Exactly 2 TRANSFER movements linked by the same referenceId (transfer UUID)
     const movements = await db.inventoryMovement.findMany({
-      where: { referenceId: pending.transferNumber },
+      where: { referenceId: pending.id },
     });
     expect(movements).toHaveLength(2);
 
@@ -279,9 +279,9 @@ describe('transfers.confirm — movimiento físico, 2 InventoryMovements, reserv
     expect(outMov!.locationId).toBe(originLocId);
     expect(inMov!.locationId).toBe(destLoc!.id);
 
-    // Same referenceId links the pair
+    // Both legs share the transfer UUID as referenceId
     expect(outMov!.referenceId).toBe(inMov!.referenceId);
-    expect(outMov!.referenceId).toBe(pending.transferNumber);
+    expect(outMov!.referenceId).toBe(pending.id);
   });
 });
 
@@ -317,7 +317,7 @@ describe('transfers.cancel — libera reserva, sin movimientos ni cambio en onHa
 
     // Zero InventoryMovements
     const movements = await db.inventoryMovement.findMany({
-      where: { referenceId: pending.transferNumber },
+      where: { referenceId: pending.id },
     });
     expect(movements).toHaveLength(0);
 
