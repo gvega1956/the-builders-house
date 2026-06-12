@@ -961,12 +961,13 @@ export const invoicingRouter = createTRPCRouter({
         }
 
         for (const item of invoice.items) {
+          const reservedQty = item.quantity - item.quantityBackordered;
           await tx.inventoryMovement.create({
             data: {
               productId: item.productId,
               locationId: item.locationId!,
               movementType: 'OUT',
-              quantity: -item.quantity,
+              quantity: -reservedQty,
               referenceType: 'INVOICE',
               referenceId: invoice.id,
               userId: ctx.session!.user!.id!,
@@ -974,12 +975,11 @@ export const invoicingRouter = createTRPCRouter({
             },
           });
 
-          // B2: release only what was actually reserved; clear backorder portion separately
           await tx.productLocation.update({
             where: { id: item.locationId! },
             data: {
-              quantityOnHand: { decrement: item.quantity },
-              reservedQuantity: { decrement: item.quantity - item.quantityBackordered },
+              quantityOnHand: { decrement: reservedQty },
+              reservedQuantity: { decrement: reservedQty },
               backorderQuantity: { decrement: item.quantityBackordered },
             },
           });
@@ -1093,24 +1093,25 @@ export const invoicingRouter = createTRPCRouter({
 
         // 1. Descarga inventario y libera reservas
         for (const item of invoice.items) {
+          const reservedQty = item.quantity - item.quantityBackordered;
           await tx.inventoryMovement.create({
             data: {
               productId: item.productId,
               locationId: item.locationId!,
               movementType: 'OUT',
-              quantity: -item.quantity,
+              quantity: -reservedQty,
               referenceType: 'INVOICE',
               referenceId: invoice.id,
               userId: ctx.session!.user!.id!,
               ipAddress: ctx.req.headers.get('x-forwarded-for') ?? undefined,
             },
           });
-          // B2: release only what was actually reserved; clear backorder portion separately
+
           await tx.productLocation.update({
             where: { id: item.locationId! },
             data: {
-              quantityOnHand: { decrement: item.quantity },
-              reservedQuantity: { decrement: item.quantity - item.quantityBackordered },
+              quantityOnHand: { decrement: reservedQty },
+              reservedQuantity: { decrement: reservedQty },
               backorderQuantity: { decrement: item.quantityBackordered },
             },
           });
