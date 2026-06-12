@@ -20,9 +20,9 @@ import { glass } from '@/lib/ui';
 function make3dShadow(floorColor: string, glowColor = 'rgba(0,0,0,0)') {
   return [
     '0 1px 0 rgba(255,255,255,0.85) inset',
-    `0 3px 0 ${floorColor}`,
-    `0 8px 20px ${glowColor}`,
-    '0 1px 3px rgba(0,0,0,0.08)',
+    `0 6px 0 ${floorColor}`,
+    `0 10px 24px ${glowColor}`,
+    '0 1px 4px rgba(0,0,0,0.10)',
   ].join(', ');
 }
 
