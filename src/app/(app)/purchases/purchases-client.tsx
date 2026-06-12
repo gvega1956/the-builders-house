@@ -568,10 +568,11 @@ export function PurchasesClient() {
               {detail.items.map((item) => {
                 const pending = item.quantityOrdered - item.quantityReceived;
                 const r = receiveItems[item.id] ?? { qty: '', locationId: '' };
+                // Filter locations to only those belonging to this specific item's product
                 const allLocs = warehouses?.flatMap((w) =>
-                  (w.locations as unknown as Array<{ id: string; locationCode: string }>).map((l) => ({
-                    id: l.id, label: `${w.name} — ${l.locationCode}`,
-                  }))
+                  (w.locations as unknown as Array<{ id: string; locationCode: string; productId: string }>)
+                    .filter((l) => l.productId === item.productId)
+                    .map((l) => ({ id: l.id, label: `${w.name} — ${l.locationCode}` }))
                 ) ?? [];
                 return (
                   <div key={item.id} className="p-3 rounded-xl border border-slate-200">
