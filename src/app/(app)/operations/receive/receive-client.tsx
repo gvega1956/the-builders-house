@@ -23,6 +23,7 @@ export function ReceiveClient() {
   // Form state
   const [productId, setProductId] = useState('');
   const [locationId, setLocationId] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
   const [quantity, setQuantity] = useState('');
   const [notes, setNotes] = useState('');
   const [search, setSearch] = useState('');
@@ -45,12 +46,14 @@ export function ReceiveClient() {
     onSuccess: () => {
       const prod = products?.products.find((p) => p.id === productId);
       const loc = allLocations.find((l) => l.id === locationId);
+      const wh = warehouses?.find((w) => w.id === warehouseId);
       setSuccess(
-        `${quantity} unidades de ${prod?.name ?? '—'} recibidas en ${loc?.label ?? '—'}`,
+        `${quantity} unidades de ${prod?.name ?? '—'} recibidas en ${loc?.label ?? wh?.name ?? '—'}`,
       );
       setError(null);
       setProductId('');
       setLocationId('');
+      setWarehouseId('');
       setQuantity('');
       setNotes('');
       void refetchHistory();
@@ -82,10 +85,10 @@ export function ReceiveClient() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!productId || !locationId || !quantity) return;
+    if (!productId || (!locationId && !warehouseId) || !quantity) return;
     receiveMutation.mutate({
       productId,
-      locationId,
+      ...(locationId ? { locationId } : { warehouseId }),
       movementType: 'IN',
       quantity: parseInt(quantity, 10),
       referenceType: 'DIRECT_RECEIPT',
@@ -146,13 +149,19 @@ export function ReceiveClient() {
 
               {/* Ubicación destino */}
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Ubicación Destino *</label>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                  {productId && availableLocations.length === 0 ? 'Almacén Destino *' : 'Ubicación Destino *'}
+                </label>
                 {productId && availableLocations.length === 0 ? (
-                  <div className="px-3 py-2.5 rounded-xl border border-yellow-200 text-xs text-yellow-700 bg-yellow-50">
-                    No hay ubicaciones para este producto. Créalas en Configuración → Almacenes.
-                  </div>
+                  <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
+                    className={inputCls} required disabled={!productId}>
+                    <option value="">— Seleccionar almacén —</option>
+                    {warehouses?.map((w) => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
                 ) : (
-                  <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
+                  <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setWarehouseId(''); }}
                     className={inputCls} required disabled={!productId}>
                     <option value="">— Seleccionar ubicación —</option>
                     {availableLocations.map((l) => (
@@ -196,7 +205,7 @@ export function ReceiveClient() {
                 </div>
               )}
 
-              <button type="submit" disabled={receiveMutation.isPending || !productId || !locationId || !quantity}
+              <button type="submit" disabled={receiveMutation.isPending || !productId || (!locationId && !warehouseId) || !quantity}
                 className="w-full py-2.5 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 transition-all hover:opacity-90"
                 style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
                 <ArrowDown size={14} />

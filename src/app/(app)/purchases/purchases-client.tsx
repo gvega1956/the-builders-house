@@ -39,7 +39,7 @@ export function PurchasesClient() {
   const [notes, setNotes] = useState('');
 
   // Receive form
-  const [receiveItems, setReceiveItems] = useState<Record<string, { qty: string; locationId: string }>>({});
+  const [receiveItems, setReceiveItems] = useState<Record<string, { qty: string; locationId: string; warehouseId: string }>>({});
 
   const { data, isLoading, refetch } = trpc.purchases.list.useQuery({
     status: statusFilter as 'DRAFT' | 'SENT' | 'IN_TRANSIT' | 'RECEIVED' | 'CLOSED' | undefined || undefined,
@@ -108,11 +108,19 @@ export function PurchasesClient() {
     const itemsToReceive = detail.items
       .map((item) => {
         const r = receiveItems[item.id];
-        return { itemId: item.id, quantityReceived: parseInt(r?.qty ?? '0') || 0, locationId: r?.locationId ?? '' };
+        const qty = parseInt(r?.qty ?? '0') || 0;
+        const locationId = r?.locationId;
+        const warehouseId = r?.warehouseId;
+        return {
+          itemId: item.id,
+          quantityReceived: qty,
+          ...(locationId ? { locationId } : {}),
+          ...(warehouseId ? { warehouseId } : {}),
+        };
       })
-      .filter((r) => r.quantityReceived > 0 && r.locationId);
+      .filter((r) => r.quantityReceived > 0 && (r.locationId ?? r.warehouseId));
 
-    if (!itemsToReceive.length) { setError('Ingresa al menos un ítem con cantidad y ubicación'); return; }
+    if (!itemsToReceive.length) { setError('Ingresa al menos un ítem con cantidad y almacén/ubicación'); return; }
     receiveMutation.mutate({ id: selectedId, items: itemsToReceive });
   }
 
@@ -567,8 +575,7 @@ export function PurchasesClient() {
             <div className="space-y-3 mb-5">
               {detail.items.map((item) => {
                 const pending = item.quantityOrdered - item.quantityReceived;
-                const r = receiveItems[item.id] ?? { qty: '', locationId: '' };
-                // Filter locations to only those belonging to this specific item's product
+                const r = receiveItems[item.id] ?? { qty: '', locationId: '', warehouseId: '' };
                 const allLocs = warehouses?.flatMap((w) =>
                   (w.locations as unknown as Array<{ id: string; locationCode: string; productId: string }>)
                     .filter((l) => l.productId === item.productId)
@@ -597,13 +604,24 @@ export function PurchasesClient() {
                             className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-sm outline-none" />
                         </div>
                         <div>
-                          <label className="text-xs text-slate-400 mb-1 block">Ubicación destino</label>
-                          <select value={r.locationId}
-                            onChange={(e) => setReceiveItems((prev) => ({ ...prev, [item.id]: { ...r, locationId: e.target.value } }))}
-                            className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none">
-                            <option value="">Seleccionar...</option>
-                            {allLocs.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
-                          </select>
+                          <label className="text-xs text-slate-400 mb-1 block">
+                            {allLocs.length > 0 ? 'Ubicación destino' : 'Almacén destino'}
+                          </label>
+                          {allLocs.length > 0 ? (
+                            <select value={r.locationId}
+                              onChange={(e) => setReceiveItems((prev) => ({ ...prev, [item.id]: { ...r, locationId: e.target.value, warehouseId: '' } }))}
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none">
+                              <option value="">Seleccionar...</option>
+                              {allLocs.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                            </select>
+                          ) : (
+                            <select value={r.warehouseId}
+                              onChange={(e) => setReceiveItems((prev) => ({ ...prev, [item.id]: { ...r, warehouseId: e.target.value, locationId: '' } }))}
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none">
+                              <option value="">Seleccionar almacén...</option>
+                              {warehouses?.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                            </select>
+                          )}
                         </div>
                       </div>
                     )}

@@ -27,6 +27,7 @@ const TYPE_COLORS: Record<string, { bg: string; text: string }> = {
 export function AdjustmentsClient() {
   const [productId, setProductId] = useState('');
   const [locationId, setLocationId] = useState('');
+  const [warehouseId, setWarehouseId] = useState('');
   const [movementType, setMovementType] = useState<'ADJUSTMENT' | 'DAMAGE'>('ADJUSTMENT');
   const [quantity, setQuantity] = useState('');
   const [notes, setNotes] = useState('');
@@ -47,9 +48,10 @@ export function AdjustmentsClient() {
     onSuccess: () => {
       const prod = products?.products.find((p) => p.id === productId);
       const loc = availableLocations.find((l) => l.id === locationId);
-      setSuccess(`Ajuste registrado: ${quantity} u. de ${prod?.name ?? '—'} en ${loc?.label ?? '—'}`);
+      const wh = warehouses?.find((w) => w.id === warehouseId);
+      setSuccess(`Ajuste registrado: ${quantity} u. de ${prod?.name ?? '—'} en ${loc?.label ?? wh?.name ?? '—'}`);
       setError(null);
-      setProductId(''); setLocationId(''); setQuantity(''); setNotes('');
+      setProductId(''); setLocationId(''); setWarehouseId(''); setQuantity(''); setNotes('');
       void refetchHistory();
     },
     onError: (e) => { setError(e.message); setSuccess(null); },
@@ -70,13 +72,12 @@ export function AdjustmentsClient() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!productId || !locationId || !quantity) return;
+    if (!productId || (!locationId && !warehouseId) || !quantity) return;
     const qty = parseInt(quantity, 10);
-    // DAMAGE is always negative; ADJUSTMENT can be positive or negative (user enters absolute value and we determine sign)
     const finalQty = movementType === 'DAMAGE' ? -Math.abs(qty) : qty;
     adjustMutation.mutate({
       productId,
-      locationId,
+      ...(locationId ? { locationId } : { warehouseId }),
       movementType,
       quantity: finalQty,
       referenceType: selectedAdj.ref,
@@ -137,7 +138,7 @@ export function AdjustmentsClient() {
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Buscar Producto</label>
                 <div className="relative">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#94A3B8' }} />
-                  <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setProductId(''); setLocationId(''); }}
+                  <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setProductId(''); setLocationId(''); setWarehouseId(''); }}
                     placeholder="Nombre o SKU..." className={inputCls} style={{ paddingLeft: '2rem' }} />
                 </div>
               </div>
@@ -145,7 +146,7 @@ export function AdjustmentsClient() {
               {/* Producto */}
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Producto *</label>
-                <select value={productId} onChange={(e) => { setProductId(e.target.value); setLocationId(''); }}
+                <select value={productId} onChange={(e) => { setProductId(e.target.value); setLocationId(''); setWarehouseId(''); }}
                   className={inputCls} required>
                   <option value="">— Seleccionar —</option>
                   {filteredProducts.map((p) => (
@@ -156,14 +157,26 @@ export function AdjustmentsClient() {
 
               {/* Ubicación */}
               <div>
-                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Ubicación *</label>
-                <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
-                  className={inputCls} required disabled={!productId}>
-                  <option value="">— Seleccionar —</option>
-                  {availableLocations.map((l) => (
-                    <option key={l.id} value={l.id}>{l.label} (actual: {l.quantityOnHand} u.)</option>
-                  ))}
-                </select>
+                <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
+                  {productId && availableLocations.length === 0 ? 'Almacén *' : 'Ubicación *'}
+                </label>
+                {productId && availableLocations.length === 0 ? (
+                  <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
+                    className={inputCls} required disabled={!productId}>
+                    <option value="">— Seleccionar almacén —</option>
+                    {warehouses?.map((w) => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setWarehouseId(''); }}
+                    className={inputCls} required disabled={!productId}>
+                    <option value="">— Seleccionar —</option>
+                    {availableLocations.map((l) => (
+                      <option key={l.id} value={l.id}>{l.label} (actual: {l.quantityOnHand} u.)</option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Cantidad */}

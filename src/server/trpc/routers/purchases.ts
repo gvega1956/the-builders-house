@@ -294,8 +294,12 @@ export const purchasesRouter = createTRPCRouter({
           z.object({
             itemId: z.string().cuid(),
             quantityReceived: z.number().int().min(0),
-            locationId: z.string().cuid(),
-          })
+            locationId: z.string().cuid().optional(),
+            warehouseId: z.string().cuid().optional(),
+          }).refine(
+            (d) => d.locationId || d.warehouseId,
+            { message: 'Se requiere locationId o warehouseId', path: ['locationId'] }
+          )
         ),
       })
     )
@@ -332,21 +336,39 @@ export const purchasesRouter = createTRPCRouter({
             });
           }
 
-          const location = await tx.productLocation.findUnique({
-            where: { id: recv.locationId },
-            select: { productId: true },
-          });
-          if (!location) {
-            throw new TRPCError({
-              code: 'NOT_FOUND',
-              message: `Ubicación ${recv.locationId} no encontrada`,
+          let resolvedLocationId: string;
+          if (recv.locationId) {
+            const location = await tx.productLocation.findUnique({
+              where: { id: recv.locationId },
+              select: { productId: true },
             });
-          }
-          if (location.productId !== item.productId) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `La ubicación no pertenece al producto del ítem`,
+            if (!location) {
+              throw new TRPCError({
+                code: 'NOT_FOUND',
+                message: `Ubicación ${recv.locationId} no encontrada`,
+              });
+            }
+            if (location.productId !== item.productId) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: `La ubicación no pertenece al producto del ítem`,
+              });
+            }
+            resolvedLocationId = recv.locationId;
+          } else {
+            const loc = await tx.productLocation.upsert({
+              where: { productId_warehouseId: { productId: item.productId, warehouseId: recv.warehouseId! } },
+              update: {},
+              create: {
+                productId: item.productId,
+                warehouseId: recv.warehouseId!,
+                locationCode: 'PRINCIPAL',
+                quantityOnHand: 0,
+                reservedQuantity: 0,
+                backorderQuantity: 0,
+              },
             });
+            resolvedLocationId = loc.id;
           }
 
           await tx.purchaseOrderItem.update({
@@ -357,7 +379,7 @@ export const purchasesRouter = createTRPCRouter({
           await tx.inventoryMovement.create({
             data: {
               productId: item.productId,
-              locationId: recv.locationId,
+              locationId: resolvedLocationId,
               movementType: 'IN',
               quantity: recv.quantityReceived,
               referenceType: 'PURCHASE_ORDER',
@@ -368,7 +390,7 @@ export const purchasesRouter = createTRPCRouter({
           });
 
           await tx.productLocation.update({
-            where: { id: recv.locationId },
+            where: { id: resolvedLocationId },
             data: { quantityOnHand: { increment: recv.quantityReceived } },
           });
 
