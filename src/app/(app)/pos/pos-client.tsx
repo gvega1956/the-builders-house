@@ -122,6 +122,7 @@ export function PosClient() {
         customerId,
         type: 'INVOICE',
         taxRate: TAX_RATE,
+        paymentTerms: paymentMethod === 'CREDIT' ? 'CREDITO' : 'CONTADO',
         items: cart.map((i) => ({
           productId: i.productId,
           locationId: i.locationId,
