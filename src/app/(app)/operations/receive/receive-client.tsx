@@ -147,27 +147,28 @@ export function ReceiveClient() {
                 </select>
               </div>
 
-              {/* Ubicación destino */}
+              {/* Ubicación destino — muestra ubicaciones específicas si el producto ya tiene stock,
+                  de lo contrario muestra almacenes (siempre activo para evitar dropdown bloqueado) */}
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
-                  {productId && availableLocations.length === 0 ? 'Almacén Destino *' : 'Ubicación Destino *'}
+                  {productId && availableLocations.length > 0 ? 'Ubicación Destino *' : 'Almacén Destino *'}
                 </label>
-                {productId && availableLocations.length === 0 ? (
-                  <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
-                    className={inputCls} required disabled={!productId}>
-                    <option value="">— Seleccionar almacén —</option>
-                    {warehouses?.map((w) => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
-                    ))}
-                  </select>
-                ) : (
+                {productId && availableLocations.length > 0 ? (
                   <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setWarehouseId(''); }}
-                    className={inputCls} required disabled={!productId}>
+                    className={inputCls} required>
                     <option value="">— Seleccionar ubicación —</option>
                     {availableLocations.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.label} (actual: {l.quantityOnHand} u.)
                       </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
+                    className={inputCls} required>
+                    <option value="">— Seleccionar almacén —</option>
+                    {warehouses?.map((w) => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
                 )}

@@ -158,22 +158,22 @@ export function AdjustmentsClient() {
               {/* Ubicación */}
               <div>
                 <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>
-                  {productId && availableLocations.length === 0 ? 'Almacén *' : 'Ubicación *'}
+                  {productId && availableLocations.length > 0 ? 'Ubicación *' : 'Almacén *'}
                 </label>
-                {productId && availableLocations.length === 0 ? (
-                  <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
-                    className={inputCls} required disabled={!productId}>
-                    <option value="">— Seleccionar almacén —</option>
-                    {warehouses?.map((w) => (
-                      <option key={w.id} value={w.id}>{w.name}</option>
-                    ))}
-                  </select>
-                ) : (
+                {productId && availableLocations.length > 0 ? (
                   <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setWarehouseId(''); }}
-                    className={inputCls} required disabled={!productId}>
+                    className={inputCls} required>
                     <option value="">— Seleccionar —</option>
                     {availableLocations.map((l) => (
                       <option key={l.id} value={l.id}>{l.label} (actual: {l.quantityOnHand} u.)</option>
+                    ))}
+                  </select>
+                ) : (
+                  <select value={warehouseId} onChange={(e) => { setWarehouseId(e.target.value); setLocationId(''); }}
+                    className={inputCls} required>
+                    <option value="">— Seleccionar almacén —</option>
+                    {warehouses?.map((w) => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
                 )}
@@ -212,7 +212,7 @@ export function AdjustmentsClient() {
                 </div>
               )}
 
-              <button type="submit" disabled={adjustMutation.isPending || !productId || !locationId || !quantity || !notes}
+              <button type="submit" disabled={adjustMutation.isPending || !productId || (!locationId && !warehouseId) || !quantity || !notes}
                 className="w-full py-2.5 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 hover:opacity-90"
                 style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
                 <SlidersHorizontal size={14} />
