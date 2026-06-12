@@ -49,7 +49,7 @@ export function PurchasesClient() {
 
   const { data: detail, refetch: refetchDetail } = trpc.purchases.byId.useQuery(
     selectedId ?? '',
-    { enabled: !!selectedId && modal === 'detail' }
+    { enabled: !!selectedId && (modal === 'detail' || modal === 'receive') }
   );
 
   const { data: suppliers } = trpc.settings.suppliers.useQuery();
