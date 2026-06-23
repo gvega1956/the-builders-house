@@ -9,8 +9,9 @@ import {
   ArrowUpRight, ArrowDownRight, AlertTriangle, Camera,
   CheckCircle2, Shield, Boxes, ChevronUp, ExternalLink, Clock,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { brand } from '@/lib/brand';
 import { formatCurrency } from '@/lib/utils';
 import { trpc } from '@/lib/trpc';
@@ -160,14 +161,53 @@ const MOVEMENT_TYPE_LABEL: Record<string, string> = {
   ADJUSTMENT: 'ajuste',
 };
 
+const PERIOD_OPTS = [
+  { key: 'today', label: 'Hoy',        kpiLabel: 'del día',           days: 7  },
+  { key: 'week',  label: 'Esta semana', kpiLabel: 'últimos 7 días',    days: 7  },
+  { key: 'month', label: 'Este mes',    kpiLabel: 'del mes',           days: 30 },
+] as const;
+type KpiPeriod = typeof PERIOD_OPTS[number]['key'];
+
 export function DashboardClient({ userName: fullName }: { userName: string }) {
-  const { data: kpis } = trpc.dashboard.kpis.useQuery();
-  const { data: salesByDay } = trpc.dashboard.salesByDay.useQuery({ days: 7 });
+  const router = useRouter();
+  const [stockAlertsExpanded, setStockAlertsExpanded] = useState(false);
+  const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>('today');
+  const [showPeriodMenu, setShowPeriodMenu] = useState(false);
+  const periodMenuRef = useRef<HTMLDivElement>(null);
+
+  // Compute date range on the CLIENT to respect local timezone (PR = UTC-4).
+  // Without this, the server's UTC "today" cuts off at 8 PM local time.
+  const { kpiFrom, kpiTo, chartDays } = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    if (kpiPeriod === 'today')
+      return { kpiFrom: todayStart, kpiTo: now, chartDays: 7 };
+    if (kpiPeriod === 'week') {
+      const d = new Date(todayStart);
+      d.setDate(d.getDate() - 6);
+      return { kpiFrom: d, kpiTo: now, chartDays: 7 };
+    }
+    return { kpiFrom: new Date(now.getFullYear(), now.getMonth(), 1), kpiTo: now, chartDays: 30 };
+  }, [kpiPeriod]);
+
+  useEffect(() => {
+    if (!showPeriodMenu) return;
+    function handler(e: MouseEvent) {
+      if (periodMenuRef.current && !periodMenuRef.current.contains(e.target as Node))
+        setShowPeriodMenu(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showPeriodMenu]);
+
+  const { data: kpis } = trpc.dashboard.kpis.useQuery({ from: kpiFrom, to: kpiTo });
+  const { data: salesByDay } = trpc.dashboard.salesByDay.useQuery({ days: chartDays });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
   const { data: stockAlerts } = trpc.dashboard.stockAlerts.useQuery();
   const { data: pendingAuth } = trpc.dashboard.pendingAuthAlerts.useQuery();
-  const [stockAlertsExpanded, setStockAlertsExpanded] = useState(false);
+
+  const currentPeriod = PERIOD_OPTS.find(p => p.key === kpiPeriod)!;
 
   const userName = fullName.split(' ')[0] ?? 'equipo';
   const now = new Date();
@@ -219,7 +259,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
             {greeting}, {userName}
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {kpis?.invoiceCount ?? 0} facturas hoy · {' '}
+            {kpis?.invoiceCount ?? 0} facturas {currentPeriod.label.toLowerCase()} · {' '}
             {adjustmentsWithoutPhoto > 0 ? (
               <span className="font-semibold text-rose-600">{adjustmentsWithoutPhoto} ajuste(s) sin foto</span>
             ) : (
@@ -228,20 +268,43 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* ── Selector de período ── */}
+          <div ref={periodMenuRef} className="relative">
+            <button
+              onClick={() => setShowPeriodMenu(m => !m)}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl transition-all hover:shadow-md"
+              style={{ ...glass, color: brand.navy[800] }}
+            >
+              Ver: <span className="font-semibold">{currentPeriod.label}</span>
+              <ChevronDown size={13} style={{ transform: showPeriodMenu ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
+            </button>
+            {showPeriodMenu && (
+              <div className="absolute right-0 top-full mt-1.5 rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden z-50" style={{ minWidth: 160 }}>
+                {PERIOD_OPTS.map(opt => (
+                  <button
+                    key={opt.key}
+                    onClick={() => { setKpiPeriod(opt.key); setShowPeriodMenu(false); }}
+                    className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left transition-colors hover:bg-slate-50"
+                    style={{ color: kpiPeriod === opt.key ? brand.orange[500] : brand.navy[800], fontWeight: kpiPeriod === opt.key ? 600 : 400 }}
+                  >
+                    {opt.label}
+                    {kpiPeriod === opt.key && <CheckCircle2 size={14} style={{ color: brand.orange[500] }} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ── Nueva factura ── */}
           <button
-            className="px-3 py-2 text-sm font-medium rounded-xl transition-all hover:shadow-md"
-            style={{ ...glass, color: brand.navy[800] }}
-          >
-            Esta semana <ChevronDown size={13} className="inline ml-1" />
-          </button>
-          <button
+            onClick={() => router.push('/invoicing')}
             className="px-4 py-2 text-sm font-bold text-white rounded-xl flex items-center gap-1.5 shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5"
             style={{ backgroundColor: brand.orange[500] }}
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = brand.orange[600])}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = brand.orange[500])}
           >
             <Plus size={14} strokeWidth={2.5} />
-            Nueva venta
+            Nueva factura
           </button>
         </div>
       </div>
@@ -411,7 +474,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-4">
         <KPICard
-          label="Ventas del día"
+          label={`Ventas ${currentPeriod.kpiLabel}`}
           value={formatCurrency(salesToday)}
           icon={DollarSign}
           color="purple"
@@ -444,10 +507,10 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           <div className="flex items-center justify-between mb-5">
             <div>
               <h3 className="text-sm font-semibold" style={{ color: brand.navy[950] }}>
-                Ventas vs. meta semanal
+                Ventas vs. meta — {currentPeriod.label}
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Últimos 7 días · Total: {formatCurrency(totalWeekSales)}
+                {chartDays === 30 ? 'Últimos 30 días' : 'Últimos 7 días'} · Total: {formatCurrency(totalWeekSales)}
               </p>
             </div>
             <div className="flex items-center gap-4 text-xs">
