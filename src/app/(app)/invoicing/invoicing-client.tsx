@@ -507,14 +507,78 @@ export function InvoicingClient({ role }: { role: string }) {
   // Edit reason (required for ISSUED invoices)
   const [editReason, setEditReason] = useState('');
 
+  // Date filter & print
+  const [dateMode, setDateMode] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [printMode, setPrintMode] = useState(false);
+
+  const { queryFrom, queryTo } = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (dateMode === 'today')
+      return { queryFrom: todayStart, queryTo: now };
+    if (dateMode === 'week') {
+      const d = new Date(todayStart);
+      d.setDate(d.getDate() - d.getDay());
+      return { queryFrom: d, queryTo: now };
+    }
+    if (dateMode === 'month')
+      return { queryFrom: new Date(now.getFullYear(), now.getMonth(), 1), queryTo: now };
+    if (dateMode === 'custom' && dateFrom)
+      return {
+        queryFrom: new Date(dateFrom + 'T00:00:00'),
+        queryTo: dateTo ? new Date(dateTo + 'T23:59:59') : now,
+      };
+    return { queryFrom: undefined, queryTo: undefined };
+  }, [dateMode, dateFrom, dateTo]);
+
+  const periodLabel = useMemo(() => {
+    if (dateMode === 'today')
+      return `Hoy — ${new Date().toLocaleDateString('es-PR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+    if (dateMode === 'week')  return 'Esta semana';
+    if (dateMode === 'month') return new Date().toLocaleDateString('es-PR', { month: 'long', year: 'numeric' });
+    if (dateMode === 'custom') {
+      const f = dateFrom ? new Date(dateFrom + 'T12:00:00').toLocaleDateString('es-PR') : '—';
+      const t = dateTo   ? new Date(dateTo   + 'T12:00:00').toLocaleDateString('es-PR') : 'hoy';
+      return `${f} al ${t}`;
+    }
+    return 'Todos los períodos';
+  }, [dateMode, dateFrom, dateTo]);
+
   // Queries
-  const { data, isLoading, refetch } = trpc.invoicing.list.useQuery({
+  const { data, isLoading, isFetching, refetch } = trpc.invoicing.list.useQuery({
     search: search || undefined,
     status: (statusFilter || undefined) as 'DRAFT' | 'ISSUED' | 'PAID' | 'PARTIAL' | 'VOIDED' | 'PENDING_AUTHORIZATION' | 'CONVERTED' | undefined,
     type: (typeFilter as InvoiceType) || undefined,
-    page,
-    pageSize: 20,
+    from: queryFrom,
+    to: queryTo,
+    page: printMode ? 1 : page,
+    pageSize: printMode ? 500 : 20,
   });
+
+  // Reset printMode when print dialog closes
+  useEffect(() => {
+    const handler = () => setPrintMode(false);
+    window.addEventListener('afterprint', handler);
+    return () => window.removeEventListener('afterprint', handler);
+  }, []);
+
+  // Trigger window.print() once the large-pageSize data finishes loading
+  const fetchingForPrint = useRef(false);
+  useEffect(() => {
+    if (printMode && isFetching)  { fetchingForPrint.current = true; return; }
+    if (printMode && !isFetching && fetchingForPrint.current) {
+      fetchingForPrint.current = false;
+      window.print();
+    }
+  }, [printMode, isFetching]);
+
+  function handlePrint() {
+    fetchingForPrint.current = false;
+    setPage(1);
+    setPrintMode(true);
+  }
 
   const { data: detail, refetch: refetchDetail } = trpc.invoicing.byId.useQuery(
     selectedId ?? '',
@@ -725,6 +789,13 @@ export function InvoicingClient({ role }: { role: string }) {
   const invoices = data?.invoices ?? [];
   const totalCount = data?.total ?? 0;
   const totalPages = Math.ceil(totalCount / 20);
+
+  const printTotals = useMemo(() => ({
+    subtotal: invoices.reduce((s, inv) => s + Number(inv.subtotal), 0),
+    tax:      invoices.reduce((s, inv) => s + Number(inv.taxAmount), 0),
+    total:    invoices.reduce((s, inv) => s + Number(inv.total), 0),
+    paid:     invoices.reduce((s, inv) => s + Number(inv.paidAmount), 0),
+  }), [invoices]);
 
   return (
     <div className="space-y-5">
@@ -981,6 +1052,27 @@ export function InvoicingClient({ role }: { role: string }) {
 
       {activeTab === 'invoices' && (<>
 
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          body > * { visibility: hidden !important; }
+          #invoice-print-area, #invoice-print-area * { visibility: visible !important; }
+          #invoice-print-area {
+            position: fixed !important;
+            inset: 0;
+            width: 100% !important;
+            max-width: 100% !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            background: white !important;
+          }
+          .print\\:hidden { display: none !important; }
+          @page { margin: 1.2cm; size: landscape; }
+        }
+      `}</style>
+
       {/* ── Filters ── */}
       <div style={glass} className="rounded-2xl p-4 flex flex-wrap gap-3 items-center">
         <div className="flex items-center gap-2 flex-1 min-w-48 bg-white/60 rounded-xl px-3 py-2 border border-white/80">
@@ -1008,9 +1100,96 @@ export function InvoicingClient({ role }: { role: string }) {
         </select>
       </div>
 
+      {/* ── Date filter + Print ── */}
+      <div style={glass} className="rounded-2xl px-4 py-3 flex flex-wrap gap-2 items-center">
+        {/* Quick period buttons */}
+        {(['all', 'today', 'week', 'month'] as const).map((mode) => {
+          const labels = { all: 'Todo', today: 'Hoy', week: 'Esta semana', month: 'Este mes' };
+          const active = dateMode === mode;
+          return (
+            <button key={mode} onClick={() => { setDateMode(mode); setPage(1); }}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+              style={{
+                background: active ? brand.navy[950] : 'rgba(255,255,255,0.7)',
+                color: active ? '#fff' : brand.navy[700],
+                border: `1px solid ${active ? brand.navy[950] : 'rgba(203,213,225,0.8)'}`,
+              }}>
+              {labels[mode]}
+            </button>
+          );
+        })}
+        <button onClick={() => { setDateMode('custom'); setPage(1); }}
+          className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+          style={{
+            background: dateMode === 'custom' ? brand.orange[500] : 'rgba(255,255,255,0.7)',
+            color: dateMode === 'custom' ? '#fff' : brand.navy[700],
+            border: `1px solid ${dateMode === 'custom' ? brand.orange[500] : 'rgba(203,213,225,0.8)'}`,
+          }}>
+          Rango personalizado
+        </button>
+
+        {dateMode === 'custom' && (
+          <>
+            <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+              className="text-xs px-2.5 py-1.5 rounded-xl border bg-white outline-none"
+              style={{ color: brand.navy[800], borderColor: '#E2E8F0' }} />
+            <span className="text-xs font-medium" style={{ color: '#94A3B8' }}>al</span>
+            <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+              className="text-xs px-2.5 py-1.5 rounded-xl border bg-white outline-none"
+              style={{ color: brand.navy[800], borderColor: '#E2E8F0' }} />
+          </>
+        )}
+
+        <div className="flex-1" />
+
+        {/* Period summary badge */}
+        {dateMode !== 'all' && totalCount > 0 && (
+          <span className="text-xs font-semibold px-3 py-1.5 rounded-xl"
+            style={{ background: brand.orange[50], color: brand.orange[600], border: `1px solid ${brand.orange[100]}` }}>
+            {totalCount} doc · {formatCurrency(printTotals.total)}
+          </span>
+        )}
+
+        {/* Print button */}
+        <button onClick={handlePrint} disabled={printMode}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-60"
+          style={{ background: brand.navy[950], color: '#fff' }}>
+          <Printer size={13} />
+          {printMode ? 'Preparando…' : 'Imprimir'}
+        </button>
+      </div>
+
       {/* ── Invoice Table ── */}
-      <div style={glass} className="rounded-2xl overflow-hidden">
-        {isLoading ? (
+      <div id="invoice-print-area" style={glass} className="rounded-2xl overflow-hidden">
+
+        {/* Print-only header (hidden on screen) */}
+        <div className="hidden print:block px-6 pt-6 pb-4 border-b border-slate-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="text-xl font-bold" style={{ color: brand.navy[950] }}>
+                THE BUILDER&apos;S HOUSE · Puerto Rico
+              </div>
+              <div className="text-sm font-semibold mt-1" style={{ color: brand.orange[500] }}>
+                Reporte de Ventas
+              </div>
+              <div className="text-xs mt-1" style={{ color: '#64748B' }}>
+                Período: {periodLabel}
+                {typeFilter && ` · ${TYPE_CFG[typeFilter as InvoiceType]?.label ?? typeFilter}`}
+                {statusFilter && ` · ${STATUS_STYLES[statusFilter]?.label ?? statusFilter}`}
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-xs" style={{ color: '#94A3B8' }}>
+                Generado el {new Date().toLocaleDateString('es-PR', { year: 'numeric', month: 'long', day: 'numeric' })}
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: '#94A3B8' }}>
+                {totalCount} documento{totalCount !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {isLoading || (printMode && isFetching) ? (
           <div className="flex items-center justify-center py-20 text-slate-400 text-sm">Cargando...</div>
         ) : invoices.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
@@ -1058,7 +1237,7 @@ export function InvoicingClient({ role }: { role: string }) {
                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
                           style={{ backgroundColor: st.bg, color: st.text }}>{st.label}</span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 print:hidden">
                         <div className="flex gap-1">
                           <button onClick={() => { setSelectedId(inv.id); setModal('detail'); }}
                             className="p-1.5 rounded-lg hover:bg-slate-100" title="Ver detalle">
@@ -1111,14 +1290,39 @@ export function InvoicingClient({ role }: { role: string }) {
                   );
                 })}
               </tbody>
+              {/* Totals row — always visible, prominent when printing */}
+              <tfoot>
+                <tr style={{ borderTop: '2px solid rgba(10,22,40,0.12)', backgroundColor: 'rgba(10,22,40,0.03)' }}>
+                  <td colSpan={5} className="px-4 py-3 text-xs font-bold uppercase tracking-wide" style={{ color: brand.navy[700] }}>
+                    {totalCount} documento{totalCount !== 1 ? 's' : ''}
+                    {dateMode !== 'all' && <span className="ml-2 font-normal normal-case" style={{ color: '#64748B' }}>· {periodLabel}</span>}
+                  </td>
+                  <td className="px-4 py-3 font-bold text-sm" style={{ color: brand.navy[950] }}>
+                    {formatCurrency(printTotals.subtotal)}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-sm text-slate-500">
+                    {formatCurrency(printTotals.tax)}
+                  </td>
+                  <td className="px-4 py-3 font-bold text-sm" style={{ color: brand.navy[950] }}>
+                    {formatCurrency(printTotals.total)}
+                  </td>
+                  <td className="px-4 py-3 font-bold text-sm" style={{ color: '#16A34A' }}>
+                    {formatCurrency(printTotals.paid)}
+                  </td>
+                  <td className="px-4 py-3 font-bold text-sm" style={{ color: printTotals.total - printTotals.paid > 0 ? '#DC2626' : '#16A34A' }}>
+                    {formatCurrency(printTotals.total - printTotals.paid)}
+                  </td>
+                  <td className="print:hidden" />
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}
       </div>
 
-      {/* ── Pagination ── */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm" style={{ color: '#64748B' }}>
+      {/* ── Pagination (hidden in print mode) ── */}
+      {totalPages > 1 && !printMode && (
+        <div className="flex items-center justify-between text-sm print:hidden" style={{ color: '#64748B' }}>
           <span>Mostrando {(page - 1) * 20 + 1}–{Math.min(page * 20, totalCount)} de {totalCount}</span>
           <div className="flex gap-2">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="p-1.5 rounded-lg border disabled:opacity-40"><ChevronLeft size={16} /></button>
