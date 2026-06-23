@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -42,6 +43,264 @@ type LineItem = {
   locationId: string;
   availableStock: number;
 };
+
+// ─── ProductCombobox ──────────────────────────────────────────────────────────
+
+type ComboProductLocation = {
+  id: string;
+  locationCode: string;
+  quantityOnHand: number;
+  reservedQuantity: number;
+  warehouse: { name: string };
+};
+
+type ComboProduct = {
+  id: string;
+  sku: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
+  model?: string | null;
+  type?: string | null;
+  dimensions?: unknown;
+  locations?: ComboProductLocation[];
+};
+
+function ProductCombobox({
+  value,
+  products,
+  onChange,
+}: {
+  value: string;
+  products: ComboProduct[];
+  onChange: (productId: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 320 });
+  const triggerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const selectedProduct = products.find((p) => p.id === value);
+
+  const totalAvailable = useMemo(() => {
+    if (!selectedProduct?.locations) return 0;
+    return selectedProduct.locations.reduce(
+      (s, loc) => s + loc.quantityOnHand - loc.reservedQuantity,
+      0,
+    );
+  }, [selectedProduct]);
+
+  const calcPos = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setDropdownPos({
+      top: rect.bottom + window.scrollY + 4,
+      left: rect.left + window.scrollX,
+      width: Math.max(rect.width, 320),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onClose(e: MouseEvent) {
+      if (triggerRef.current && !triggerRef.current.contains(e.target as Node)) {
+        const dropdown = document.getElementById('product-combobox-portal');
+        if (dropdown && dropdown.contains(e.target as Node)) return;
+        setIsOpen(false);
+        setSearch('');
+      }
+    }
+    function onScroll() { calcPos(); }
+    document.addEventListener('mousedown', onClose);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onClose);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [isOpen, calcPos]);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    if (!q) return products;
+    return products.filter((p) => {
+      const dims = p.dimensions as { width?: number; heightDisplay?: string } | null;
+      return [
+        p.name,
+        p.sku,
+        p.description ?? '',
+        p.color ?? '',
+        p.model ?? '',
+        p.type ?? '',
+        dims?.width ? String(dims.width) : '',
+        dims?.heightDisplay ?? '',
+      ].some((f) => f.toLowerCase().includes(q));
+    });
+  }, [products, search]);
+
+  function handleOpen() {
+    calcPos();
+    setIsOpen(true);
+    setSearch('');
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function handleSelect(productId: string) {
+    onChange(productId);
+    setIsOpen(false);
+    setSearch('');
+  }
+
+  function handleClear(e: React.MouseEvent) {
+    e.stopPropagation();
+    onChange('');
+    setIsOpen(false);
+    setSearch('');
+  }
+
+  const stockColor = totalAvailable > 10 ? '#166534' : totalAvailable > 0 ? '#854D0E' : '#991B1B';
+  const stockBg   = totalAvailable > 10 ? '#F0FDF4' : totalAvailable > 0 ? '#FEF9C3' : '#FEF2F2';
+
+  return (
+    <div ref={triggerRef} className="relative w-full">
+      {/* ── Trigger ── */}
+      {isOpen ? (
+        <div className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded-lg border bg-white"
+          style={{ borderColor: brand.orange[500], boxShadow: `0 0 0 2px ${brand.orange[100]}` }}>
+          <Search size={11} style={{ color: '#94A3B8', flexShrink: 0 }} />
+          <input
+            ref={inputRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, SKU, medida, color…"
+            className="flex-1 text-xs outline-none bg-transparent"
+            style={{ color: brand.navy[900] }}
+          />
+          {search && (
+            <button type="button" onClick={() => setSearch('')}
+              className="shrink-0 hover:text-slate-600" style={{ color: '#94A3B8' }}>
+              <X size={10} />
+            </button>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-xs text-left transition-colors hover:border-slate-300"
+          style={{ color: selectedProduct ? brand.navy[900] : '#94A3B8' }}
+        >
+          <Search size={11} style={{ color: '#94A3B8', flexShrink: 0 }} />
+          <span className="flex-1 truncate min-w-0">
+            {selectedProduct ? selectedProduct.name : 'Seleccionar producto…'}
+          </span>
+          {selectedProduct && (
+            <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded ml-1"
+              style={{ background: stockBg, color: stockColor }}>
+              {totalAvailable}u
+            </span>
+          )}
+          {selectedProduct ? (
+            <span onClick={handleClear} role="button"
+              className="shrink-0 hover:text-red-500 transition-colors ml-0.5" style={{ color: '#94A3B8' }}>
+              <X size={10} />
+            </span>
+          ) : null}
+        </button>
+      )}
+
+      {/* ── Dropdown via portal para evitar overflow:hidden del contenedor padre ── */}
+      {isOpen && typeof window !== 'undefined' && createPortal(
+        <div
+          id="product-combobox-portal"
+          className="rounded-xl border border-slate-200 bg-white shadow-2xl overflow-auto"
+          style={{
+            position: 'absolute',
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            maxHeight: 300,
+            zIndex: 9999,
+          }}
+        >
+          {filtered.length === 0 ? (
+            <div className="px-3 py-5 text-xs text-center" style={{ color: '#94A3B8' }}>
+              Sin resultados para &ldquo;{search}&rdquo;
+            </div>
+          ) : (
+            filtered.map((p) => {
+              const dims = p.dimensions as { width?: number; heightDisplay?: string } | null;
+              const dimStr = dims?.width && dims?.heightDisplay
+                ? `${dims.width}" × ${dims.heightDisplay}"`
+                : null;
+              const isSelected = p.id === value;
+              const pAvail = p.locations?.reduce(
+                (s, loc) => s + loc.quantityOnHand - loc.reservedQuantity,
+                0,
+              ) ?? 0;
+              const pStockColor = pAvail > 10 ? '#166534' : pAvail > 0 ? '#854D0E' : '#991B1B';
+              const pStockBg   = pAvail > 10 ? '#F0FDF4' : pAvail > 0 ? '#FEF9C3' : '#FEF2F2';
+
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => handleSelect(p.id)}
+                  className="w-full flex flex-col items-start px-3 py-2 text-left border-b border-slate-50 transition-colors"
+                  style={{ backgroundColor: isSelected ? brand.orange[50] : undefined }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = '#FFF7ED';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSelected ? brand.orange[50] : '';
+                  }}
+                >
+                  {/* Línea 1: nombre + medida + stock total */}
+                  <div className="flex items-center gap-2 w-full">
+                    <span className="text-xs font-medium flex-1 truncate" style={{ color: brand.navy[900] }}>
+                      {p.name}
+                    </span>
+                    {dimStr && (
+                      <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-mono"
+                        style={{ background: '#F1F5F9', color: '#475569' }}>
+                        {dimStr}
+                      </span>
+                    )}
+                    <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                      style={{ background: pStockBg, color: pStockColor }}>
+                      {pAvail}u
+                    </span>
+                  </div>
+                  {/* Línea 2: SKU + color + modelo + stock por almacén */}
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    <span className="font-mono text-[10px]" style={{ color: brand.navy[700] }}>
+                      {p.sku}
+                    </span>
+                    {p.color && (
+                      <span className="text-[10px]" style={{ color: '#64748B' }}>· {p.color}</span>
+                    )}
+                    {p.model && (
+                      <span className="text-[10px]" style={{ color: '#64748B' }}>· {p.model}</span>
+                    )}
+                    {p.locations && p.locations.length > 0 && (
+                      <span className="text-[10px]" style={{ color: '#94A3B8' }}>
+                        · {p.locations.map((loc) => {
+                          const avail = loc.quantityOnHand - loc.reservedQuantity;
+                          return `${loc.warehouse.name}: ${avail}u`;
+                        }).join(' · ')}
+                      </span>
+                    )}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
 
 // ─── Live Preview ─────────────────────────────────────────────────────────────
 
@@ -1075,32 +1334,31 @@ export function InvoicingClient({ role }: { role: string }) {
                             <div className="grid items-center gap-1.5 p-2 bg-slate-50/60"
                               style={{ gridTemplateColumns: '1fr 58px 76px 56px 26px' }}>
                               <div>
-                                <select value={line.productId} onChange={(e) => updateLine(i, 'productId', e.target.value)}
-                                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 text-xs outline-none bg-white"
-                                  style={{ color: brand.navy[900] }}>
-                                  <option value="">Seleccionar producto</option>
-                                  {products?.products.map((p) => (
-                                    <option key={p.id} value={p.id}>{p.name} ({p.sku})</option>
-                                  ))}
-                                </select>
+                                <ProductCombobox
+                                  value={line.productId}
+                                  products={products?.products ?? []}
+                                  onChange={(productId) => updateLine(i, 'productId', productId)}
+                                />
                                 {line.productSku && (
-                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                    <span className="font-mono text-xs px-1.5 py-0.5 rounded"
-                                      style={{ background: brand.navy[950] + '10', color: brand.navy[700] }}>
+                                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded"
+                                      style={{ background: brand.navy[950] + '12', color: brand.navy[700] }}>
                                       {line.productSku}
                                     </span>
-                                    {/* Stock por sucursal */}
                                     {getLocationsForProduct(line.productId).map((loc) => (
-                                      <span key={loc.id} className="text-xs px-1.5 py-0.5 rounded"
+                                      <span key={loc.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
                                         style={{
-                                          background: loc.available > 0 ? '#F0FDF4' : '#FEF2F2',
-                                          color: loc.available > 0 ? '#166534' : '#991B1B',
+                                          background: loc.available > 10 ? '#F0FDF4' : loc.available > 0 ? '#FEF9C3' : '#FEF2F2',
+                                          color:      loc.available > 10 ? '#166534' : loc.available > 0 ? '#854D0E' : '#991B1B',
                                         }}>
                                         {loc.label.split(' — ')[0]}: {loc.available}u
                                       </span>
                                     ))}
                                     {getLocationsForProduct(line.productId).length === 0 && (
-                                      <span className="text-xs text-red-500">Sin stock en sistema</span>
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                                        style={{ background: '#FEF2F2', color: '#991B1B' }}>
+                                        Sin stock en sistema
+                                      </span>
                                     )}
                                   </div>
                                 )}
