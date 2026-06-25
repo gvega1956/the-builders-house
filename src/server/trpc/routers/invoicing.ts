@@ -139,7 +139,7 @@ export const invoicingRouter = createTRPCRouter({
         }),
       };
 
-      const [invoices, total] = await Promise.all([
+      const [invoices, total, agg] = await Promise.all([
         ctx.db.invoice.findMany({
           where,
           include: {
@@ -152,9 +152,21 @@ export const invoicingRouter = createTRPCRouter({
           take: pageSize,
         }),
         ctx.db.invoice.count({ where }),
+        ctx.db.invoice.aggregate({
+          where,
+          _sum: { subtotal: true, taxAmount: true, total: true, paidAmount: true },
+        }),
       ]);
 
-      return { invoices, total, page, pageSize };
+      return {
+        invoices, total, page, pageSize,
+        totals: {
+          subtotal: Number(agg._sum.subtotal ?? 0),
+          tax:      Number(agg._sum.taxAmount ?? 0),
+          total:    Number(agg._sum.total ?? 0),
+          paid:     Number(agg._sum.paidAmount ?? 0),
+        },
+      };
     }),
 
   byId: protectedProcedure

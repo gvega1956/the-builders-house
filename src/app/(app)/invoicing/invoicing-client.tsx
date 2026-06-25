@@ -827,6 +827,10 @@ export function InvoicingClient({ role }: { role: string }) {
   const totalCount = data?.total ?? 0;
   const totalPages = Math.ceil(totalCount / 20);
 
+  // Totales del servidor — cubre TODOS los documentos que pasan el filtro, no solo la página actual
+  const serverTotals = data?.totals ?? { subtotal: 0, tax: 0, total: 0, paid: 0 };
+
+  // Totales de la página/impresión — usados en el footer de la tabla (filas visibles en pantalla o en print)
   const printTotals = useMemo(() => ({
     subtotal: invoices.reduce((s, inv) => s + Number(inv.subtotal), 0),
     tax:      invoices.reduce((s, inv) => s + Number(inv.taxAmount), 0),
@@ -1231,11 +1235,11 @@ export function InvoicingClient({ role }: { role: string }) {
 
         <div className="flex-1" />
 
-        {/* Period summary badge */}
-        {dateMode !== 'all' && totalCount > 0 && (
+        {/* Period / branch summary badge — uses server-side aggregate, not page slice */}
+        {(dateMode !== 'all' || filterBranchId) && totalCount > 0 && (
           <span className="text-xs font-semibold px-3 py-1.5 rounded-xl"
             style={{ background: brand.orange[50], color: brand.orange[600], border: `1px solid ${brand.orange[100]}` }}>
-            {totalCount} doc · {formatCurrency(printTotals.total)}
+            {totalCount} doc · {formatCurrency(serverTotals.total)}
           </span>
         )}
 
@@ -1387,19 +1391,19 @@ export function InvoicingClient({ role }: { role: string }) {
                     {dateMode !== 'all' && <span className="ml-2 font-normal normal-case" style={{ color: '#64748B' }}>· {periodLabel}</span>}
                   </td>
                   <td className="px-4 py-3 font-bold text-sm" style={{ color: brand.navy[950] }}>
-                    {formatCurrency(printTotals.subtotal)}
+                    {formatCurrency(serverTotals.subtotal)}
                   </td>
                   <td className="px-4 py-3 font-semibold text-sm text-slate-500">
-                    {formatCurrency(printTotals.tax)}
+                    {formatCurrency(serverTotals.tax)}
                   </td>
                   <td className="px-4 py-3 font-bold text-sm" style={{ color: brand.navy[950] }}>
-                    {formatCurrency(printTotals.total)}
+                    {formatCurrency(serverTotals.total)}
                   </td>
                   <td className="px-4 py-3 font-bold text-sm" style={{ color: '#16A34A' }}>
-                    {formatCurrency(printTotals.paid)}
+                    {formatCurrency(serverTotals.paid)}
                   </td>
-                  <td className="px-4 py-3 font-bold text-sm" style={{ color: printTotals.total - printTotals.paid > 0 ? '#DC2626' : '#16A34A' }}>
-                    {formatCurrency(printTotals.total - printTotals.paid)}
+                  <td className="px-4 py-3 font-bold text-sm" style={{ color: serverTotals.total - serverTotals.paid > 0 ? '#DC2626' : '#16A34A' }}>
+                    {formatCurrency(serverTotals.total - serverTotals.paid)}
                   </td>
                   <td className="print:hidden" />
                 </tr>
