@@ -132,10 +132,15 @@ export const dashboardRouter = createTRPCRouter({
     }),
 
   reportSummary: protectedProcedure.query(async ({ ctx }) => {
-    const [revenueAgg, openInvoices, byStatus, topCustomers] = await Promise.all([
+    const [revenueAgg, pendingAuthAgg, openInvoices, byStatus, topCustomers] = await Promise.all([
       ctx.db.invoice.aggregate({
         _sum: { total: true, paidAmount: true },
-        where: { status: { notIn: ['VOIDED'] }, type: 'INVOICE' },
+        where: { status: { in: ['ISSUED', 'PARTIAL', 'PAID'] }, type: 'INVOICE' },
+      }),
+      ctx.db.invoice.aggregate({
+        _sum: { total: true },
+        _count: { id: true },
+        where: { status: 'PENDING_AUTHORIZATION', type: 'INVOICE' },
       }),
       ctx.db.invoice.findMany({
         where: { status: { in: ['ISSUED', 'PARTIAL'] }, type: 'INVOICE' },
@@ -169,6 +174,10 @@ export const dashboardRouter = createTRPCRouter({
       totalRevenue: toNum(revenueAgg._sum.total),
       totalPaid: toNum(revenueAgg._sum.paidAmount),
       pendingBalance,
+      pendingAuth: {
+        total: toNum(pendingAuthAgg._sum.total),
+        count: pendingAuthAgg._count.id,
+      },
       invoicesByStatus: byStatus.map((g) => ({
         status: g.status,
         count: g._count.id,

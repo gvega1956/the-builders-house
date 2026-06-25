@@ -9,7 +9,7 @@ import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers, Download, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
+import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers, Download, ChevronLeft, ChevronRight, Building2, Clock } from 'lucide-react';
 
 const PIE_COLORS = [brand.orange[500], brand.navy[700], brand.orange[400], brand.navy[600], '#059669'];
 
@@ -254,6 +254,19 @@ export function ReportsClient() {
           </div>
         ))}
       </div>
+
+      {/* Indicador PENDING_AUTHORIZATION */}
+      {summary?.pendingAuth && summary.pendingAuth.count > 0 && (
+        <div className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm"
+          style={{ backgroundColor: brand.orange[50], border: `1px solid ${brand.orange[400]}` }}>
+          <Clock size={15} style={{ color: brand.orange[500] }} />
+          <span style={{ color: brand.orange[600] }}>
+            <strong>{summary.pendingAuth.count}</strong>{' '}
+            {summary.pendingAuth.count === 1 ? 'factura pendiente de autorizar' : 'facturas pendientes de autorizar'}{' '}
+            — <strong>{formatCurrency(summary.pendingAuth.total)}</strong> no incluido en Ventas Totales
+          </span>
+        </div>
+      )}
 
       {/* Ventas por Sucursal */}
       <div>
