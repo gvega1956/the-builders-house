@@ -322,11 +322,11 @@ export const dashboardRouter = createTRPCRouter({
         units_sold:     bigint;
       }>>`
         SELECT
-          w.id                                      AS warehouse_id,
-          w.name                                    AS warehouse_name,
-          COALESCE(SUM(ii."lineTotal"), 0)::float8  AS total,
-          COUNT(DISTINCT i.id)                      AS invoice_count,
-          COALESCE(SUM(ii.quantity), 0)::bigint     AS units_sold
+          w.id                                                                         AS warehouse_id,
+          w.name                                                                       AS warehouse_name,
+          COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN ii."lineTotal" END), 0)::float8 AS total,
+          COUNT(DISTINCT i.id)                                                          AS invoice_count,
+          COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN ii.quantity    END), 0)::bigint AS units_sold
         FROM warehouses w
         LEFT JOIN product_locations pl ON pl."warehouseId" = w.id
         LEFT JOIN invoice_items ii     ON ii."locationId"  = pl.id
