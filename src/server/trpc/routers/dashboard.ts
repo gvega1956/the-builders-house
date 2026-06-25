@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure } from '@/server/trpc';
 import type { Prisma } from '@prisma/client';
+import { prDayStart } from '@/lib/timezone';
 
 // G-3: safe Decimal-to-display conversion — avoids float precision loss on large values
 function toNum(d: Prisma.Decimal | null | undefined): number {
@@ -20,8 +21,7 @@ export const dashboardRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const from = input?.from ?? todayStart;
+      const from = input?.from ?? prDayStart(now);
       const to = input?.to ?? now;
 
       // G-1: SQL aggregation for inventoryValue and totalUnits — no full table scan in JS
@@ -115,13 +115,13 @@ export const dashboardRouter = createTRPCRouter({
 
       const rows = await ctx.db.$queryRaw<Array<{ day: Date; total: number }>>`
         SELECT
-          DATE("createdAt") AS day,
+          DATE("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Puerto_Rico') AS day,
           SUM(total)::float8 AS total
         FROM invoices
         WHERE type = 'INVOICE'
           AND status IN ('PAID', 'PARTIAL', 'ISSUED')
           AND "createdAt" >= ${from}
-        GROUP BY DATE("createdAt")
+        GROUP BY DATE("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'America/Puerto_Rico')
         ORDER BY day ASC
       `;
 
@@ -310,8 +310,7 @@ export const dashboardRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const from = input?.from ?? todayStart;
+      const from = input?.from ?? prDayStart(now);
       const to   = input?.to   ?? now;
 
       // Join invoices directly by branchId (sucursal que emitió la factura).
