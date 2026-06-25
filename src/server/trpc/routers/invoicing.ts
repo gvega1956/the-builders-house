@@ -105,6 +105,7 @@ export const invoicingRouter = createTRPCRouter({
           .enum(['DRAFT', 'ISSUED', 'PAID', 'PARTIAL', 'VOIDED', 'PENDING_AUTHORIZATION', 'CONVERTED'])
           .optional(),
         customerId: z.string().optional(),
+        branchId: z.string().cuid().optional(),
         from: z.date().optional(),
         to: z.date().optional(),
         page: z.number().int().min(1).default(1),
@@ -114,7 +115,7 @@ export const invoicingRouter = createTRPCRouter({
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { search, type, status, customerId, from, to, page = 1, pageSize = 50, hideConverted = true } = input ?? {};
+      const { search, type, status, customerId, branchId, from, to, page = 1, pageSize = 50, hideConverted = true } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.InvoiceWhereInput = {
@@ -126,6 +127,7 @@ export const invoicingRouter = createTRPCRouter({
             ? { status: { not: 'CONVERTED' } }
             : {}),
         ...(customerId && { customerId }),
+        ...(branchId && { branchId }),
         ...(from || to
           ? { createdAt: { ...(from && { gte: from }), ...(to && { lte: to }) } }
           : {}),

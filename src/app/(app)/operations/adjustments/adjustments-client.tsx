@@ -40,6 +40,7 @@ export function AdjustmentsClient() {
   const { data: warehouses } = trpc.settings.warehouses.useQuery();
   const { data: history, refetch: refetchHistory } = trpc.movements.list.useQuery({
     movementType: movementType,
+    warehouseId: warehouseId || undefined,
     page,
     pageSize: 20,
   });

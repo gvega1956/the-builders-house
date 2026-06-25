@@ -508,6 +508,9 @@ export function InvoicingClient({ role }: { role: string }) {
   // Edit reason (required for ISSUED invoices)
   const [editReason, setEditReason] = useState('');
 
+  // Branch filter (list view — independent from branchId used in the create form)
+  const [filterBranchId, setFilterBranchId] = useState('');
+
   // Date filter & print
   const [dateMode, setDateMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom'>('all');
   const [dateFrom, setDateFrom] = useState('');
@@ -561,6 +564,7 @@ export function InvoicingClient({ role }: { role: string }) {
     search: search || undefined,
     status: (statusFilter || undefined) as 'DRAFT' | 'ISSUED' | 'PAID' | 'PARTIAL' | 'VOIDED' | 'PENDING_AUTHORIZATION' | 'CONVERTED' | undefined,
     type: (typeFilter as InvoiceType) || undefined,
+    branchId: filterBranchId || undefined,
     from: queryFrom,
     to: queryTo,
     page: printMode ? 1 : page,
@@ -1163,6 +1167,27 @@ export function InvoicingClient({ role }: { role: string }) {
           <option value="CONVERTED">Convertidas</option>
         </select>
       </div>
+
+      {/* ── Branch filter ── */}
+      {(warehouses ?? []).length > 1 && (
+        <div style={glass} className="rounded-2xl px-4 py-3 flex flex-wrap gap-2 items-center">
+          <span className="text-xs font-semibold mr-1" style={{ color: brand.navy[600] }}>Sucursal:</span>
+          {[{ id: '', name: 'Todas' }, ...(warehouses ?? []).filter((w) => w.isActive)].map((w) => {
+            const active = filterBranchId === w.id;
+            return (
+              <button key={w.id} onClick={() => { setFilterBranchId(w.id); setPage(1); }}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                style={{
+                  background: active ? brand.orange[500] : 'rgba(255,255,255,0.7)',
+                  color: active ? '#fff' : brand.navy[700],
+                  border: `1px solid ${active ? brand.orange[500] : 'rgba(203,213,225,0.8)'}`,
+                }}>
+                {w.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Date filter + Print ── */}
       <div style={glass} className="rounded-2xl px-4 py-3 flex flex-wrap gap-2 items-center">

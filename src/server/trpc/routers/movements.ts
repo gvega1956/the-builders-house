@@ -86,6 +86,7 @@ export const movementsRouter = createTRPCRouter({
         productId: z.string().optional(),
         userId: z.string().optional(),
         movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']).optional(),
+        warehouseId: z.string().cuid().optional(),
         from: z.date().optional(),
         to: z.date().optional(),
         page: z.number().int().min(1).default(1),
@@ -93,13 +94,14 @@ export const movementsRouter = createTRPCRouter({
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { productId, userId, movementType, from, to, page = 1, pageSize = 50 } = input ?? {};
+      const { productId, userId, movementType, warehouseId, from, to, page = 1, pageSize = 50 } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where = {
         ...(productId && { productId }),
         ...(userId && { userId }),
         ...(movementType && { movementType }),
+        ...(warehouseId && { location: { warehouseId } }),
         ...(from || to
           ? {
               createdAt: {

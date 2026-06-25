@@ -38,6 +38,7 @@ export function ReceiveClient() {
   const { data: warehouses } = trpc.settings.warehouses.useQuery();
   const { data: history, refetch: refetchHistory } = trpc.movements.list.useQuery({
     movementType: 'IN',
+    warehouseId: warehouseId || undefined,
     page,
     pageSize: 20,
   });
