@@ -314,6 +314,8 @@ export const dashboardRouter = createTRPCRouter({
       const from = input?.from ?? todayStart;
       const to   = input?.to   ?? now;
 
+      // Join invoices directly by branchId (sucursal que emitió la factura).
+      // Facturas sin branchId (legacy) no se atribuyen a ninguna sucursal.
       const rows = await ctx.db.$queryRaw<Array<{
         warehouse_id:   string;
         warehouse_name: string;
@@ -322,19 +324,22 @@ export const dashboardRouter = createTRPCRouter({
         units_sold:     bigint;
       }>>`
         SELECT
-          w.id                                                                         AS warehouse_id,
-          w.name                                                                       AS warehouse_name,
-          COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN ii."lineTotal" END), 0)::float8 AS total,
-          COUNT(DISTINCT i.id)                                                          AS invoice_count,
-          COALESCE(SUM(CASE WHEN i.id IS NOT NULL THEN ii.quantity    END), 0)::bigint AS units_sold
+          w.id                                                   AS warehouse_id,
+          w.name                                                 AS warehouse_name,
+          COALESCE(SUM(i.total), 0)::float8                      AS total,
+          COUNT(DISTINCT i.id)                                   AS invoice_count,
+          COALESCE(SUM(ii_agg.qty), 0)::bigint                  AS units_sold
         FROM warehouses w
-        LEFT JOIN product_locations pl ON pl."warehouseId" = w.id
-        LEFT JOIN invoice_items ii     ON ii."locationId"  = pl.id
-        LEFT JOIN invoices i           ON i.id = ii."invoiceId"
+        LEFT JOIN invoices i ON i."branchId" = w.id
           AND i.type   = 'INVOICE'
           AND i.status IN ('PAID', 'PARTIAL', 'ISSUED')
           AND i."createdAt" >= ${from}
           AND i."createdAt" <= ${to}
+        LEFT JOIN (
+          SELECT "invoiceId", SUM(quantity) AS qty
+          FROM invoice_items
+          GROUP BY "invoiceId"
+        ) ii_agg ON ii_agg."invoiceId" = i.id
         WHERE w."isActive" = true
         GROUP BY w.id, w.name
         ORDER BY total DESC

@@ -180,6 +180,7 @@ export const invoicingRouter = createTRPCRouter({
     .input(
       z.object({
         customerId: z.string().cuid(),
+        branchId: z.string().cuid().optional(),
         type: z.enum(['INVOICE', 'QUOTE', 'CREDIT_NOTE']).default('INVOICE'),
         items: z.array(invoiceItemSchema).min(1),
         taxRate: z.number().min(0).max(1).default(0.115),

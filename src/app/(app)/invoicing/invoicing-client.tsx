@@ -483,6 +483,7 @@ export function InvoicingClient({ role }: { role: string }) {
   // Create form
   const [invoiceType, setInvoiceType] = useState<InvoiceType>('INVOICE');
   const [customerId, setCustomerId] = useState('');
+  const [branchId, setBranchId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [applyIvu, setApplyIvu] = useState(true);
   const [paymentMode, setPaymentMode] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
@@ -666,7 +667,7 @@ export function InvoicingClient({ role }: { role: string }) {
 
   function closeModal() {
     setModal('none'); setSelectedId(null); setEditInvoiceId(null); setError('');
-    setInvoiceType('INVOICE'); setCustomerId(''); setDueDate('');
+    setInvoiceType('INVOICE'); setCustomerId(''); setBranchId(''); setDueDate('');
     setLines([{ productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 }]);
     setApplyIvu(true); setPaymentMode('CONTADO'); setCreditDays(30);
     setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef('');
@@ -726,6 +727,7 @@ export function InvoicingClient({ role }: { role: string }) {
   function submitCreate() {
     setError('');
     if (!customerId) { setError('Selecciona un cliente'); return; }
+    if (invoiceType !== 'QUOTE' && !branchId) { setError('Selecciona la sucursal que emite esta factura'); return; }
     const validLines = lines.filter((l) => l.productId && parseInt(l.quantity) > 0);
     if (!validLines.length) { setError('Agrega al menos un producto'); return; }
     if (invoiceType !== 'QUOTE') {
@@ -763,6 +765,7 @@ export function InvoicingClient({ role }: { role: string }) {
     } else {
       createMutation.mutate({
         customerId,
+        branchId: branchId || undefined,
         type: invoiceType,
         taxRate: effectiveTaxRate,
         paymentTerms: paymentMode,
@@ -1423,6 +1426,21 @@ export function InvoicingClient({ role }: { role: string }) {
                       </div>
                     )}
                   </div>
+
+                  {/* Branch / Sucursal */}
+                  {invoiceType !== 'QUOTE' && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Sucursal *</label>
+                      <select value={branchId} onChange={(e) => setBranchId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border text-sm outline-none"
+                        style={{ color: brand.navy[900], borderColor: !branchId ? '#FCA5A5' : '#E2E8F0' }}>
+                        <option value="">Seleccionar sucursal...</option>
+                        {(warehouses ?? []).map((w) => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Payment mode + IVU toggle */}
                   <div className="grid grid-cols-2 gap-3">

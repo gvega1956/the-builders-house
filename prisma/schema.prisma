@@ -242,6 +242,7 @@ model Warehouse {
   locations     ProductLocation[]
   transfersFrom Transfer[]         @relation("TransferFrom")
   transfersTo   Transfer[]         @relation("TransferTo")
+  invoices      Invoice[]          @relation("InvoiceBranch")
 
   @@map("warehouses")
 }
@@ -384,11 +385,13 @@ model Invoice {
   notes             String?
   sourceQuoteId     String?       // set on INVOICE derived from QUOTE via convertQuoteToInvoice
   sourceInvoiceId   String?       // set on CREDIT_NOTE derived from INVOICE
+  branchId          String?       // sucursal que emitió la factura (independiente de dónde venga el stock)
   createdById       String
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
   customer          Customer      @relation(fields: [customerId], references: [id])
+  branch            Warehouse?    @relation("InvoiceBranch", fields: [branchId], references: [id])
   createdBy         User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
   sourceQuote       Invoice?      @relation("QuoteToInvoice", fields: [sourceQuoteId], references: [id])
   convertedInvoices Invoice[]     @relation("QuoteToInvoice")
