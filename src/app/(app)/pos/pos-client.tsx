@@ -26,6 +26,7 @@ const PAYMENT_LABELS: Record<string, string> = {
 export function PosClient() {
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [branchId, setBranchId] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerType, setCustomerType] = useState<'RETAIL' | 'WHOLESALE'>('RETAIL');
@@ -37,6 +38,7 @@ export function PosClient() {
 
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
   const TAX_RATE = sysConfig?.TAX_RATE ? Number(sysConfig.TAX_RATE) : 0.115;
+  const { data: warehouses } = trpc.settings.warehouses.useQuery();
 
   const { data: productData } = trpc.products.list.useQuery(
     { search, pageSize: 12 },
@@ -113,6 +115,7 @@ export function PosClient() {
   }
 
   async function checkout() {
+    if (!branchId) { setError('Selecciona una sucursal'); return; }
     if (!customerId) { setError('Selecciona un cliente'); return; }
     if (cart.length === 0) { setError('Agrega productos al carrito'); return; }
     setError('');
@@ -120,6 +123,7 @@ export function PosClient() {
     try {
       const invoice = await createMutation.mutateAsync({
         customerId,
+        branchId: branchId || undefined,
         type: 'INVOICE',
         taxRate: TAX_RATE,
         paymentTerms: paymentMethod === 'CREDIT' ? 'CREDITO' : 'CONTADO',
@@ -282,9 +286,22 @@ export function PosClient() {
         </div>
       </div>
 
-      {/* ── Right: Customer + Payment ── */}
+      {/* ── Right: Sucursal + Customer + Payment ── */}
       <div className="w-80 flex flex-col gap-4">
-        {/* Customer */}
+        {/* Sucursal */}
+        <div style={glass} className="rounded-2xl p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#94A3B8' }}>Sucursal</div>
+          <select value={branchId} onChange={(e) => setBranchId(e.target.value)}
+            className="w-full px-3 py-2 rounded-xl border text-sm outline-none"
+            style={{ color: brand.navy[900], borderColor: !branchId ? '#FCA5A5' : '#E2E8F0' }}>
+            <option value="">Seleccionar sucursal...</option>
+            {(warehouses ?? []).filter((w) => w.isActive).map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Cliente */}
         <div style={glass} className="rounded-2xl p-4">
           <div className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: '#94A3B8' }}>Cliente</div>
 
