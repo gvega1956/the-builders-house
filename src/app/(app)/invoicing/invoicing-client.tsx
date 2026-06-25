@@ -509,7 +509,7 @@ export function InvoicingClient({ role }: { role: string }) {
   const [editReason, setEditReason] = useState('');
 
   // Date filter & print
-  const [dateMode, setDateMode] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
+  const [dateMode, setDateMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom'>('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [printMode, setPrintMode] = useState(false);
@@ -519,6 +519,11 @@ export function InvoicingClient({ role }: { role: string }) {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (dateMode === 'today')
       return { queryFrom: todayStart, queryTo: now };
+    if (dateMode === 'yesterday') {
+      const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
+      const yEnd   = new Date(todayStart); yEnd.setMilliseconds(-1);
+      return { queryFrom: yStart, queryTo: yEnd };
+    }
     if (dateMode === 'week') {
       const d = new Date(todayStart);
       d.setDate(d.getDate() - d.getDay());
@@ -537,6 +542,10 @@ export function InvoicingClient({ role }: { role: string }) {
   const periodLabel = useMemo(() => {
     if (dateMode === 'today')
       return `Hoy — ${new Date().toLocaleDateString('es-PR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+    if (dateMode === 'yesterday') {
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      return `Ayer — ${y.toLocaleDateString('es-PR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
+    }
     if (dateMode === 'week')  return 'Esta semana';
     if (dateMode === 'month') return new Date().toLocaleDateString('es-PR', { month: 'long', year: 'numeric' });
     if (dateMode === 'custom') {
@@ -1158,8 +1167,8 @@ export function InvoicingClient({ role }: { role: string }) {
       {/* ── Date filter + Print ── */}
       <div style={glass} className="rounded-2xl px-4 py-3 flex flex-wrap gap-2 items-center">
         {/* Quick period buttons */}
-        {(['all', 'today', 'week', 'month'] as const).map((mode) => {
-          const labels = { all: 'Todo', today: 'Hoy', week: 'Esta semana', month: 'Este mes' };
+        {(['all', 'today', 'yesterday', 'week', 'month'] as const).map((mode) => {
+          const labels = { all: 'Todo', today: 'Hoy', yesterday: 'Ayer', week: 'Esta semana', month: 'Este mes' };
           const active = dateMode === mode;
           return (
             <button key={mode} onClick={() => { setDateMode(mode); setPage(1); }}

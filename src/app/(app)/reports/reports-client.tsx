@@ -27,22 +27,35 @@ export function ReportsClient() {
   const [activeTab, setActiveTab] = useState<'summary' | 'movements'>('summary');
   const [movPage, setMovPage] = useState(1);
   const [movType, setMovType] = useState('');
-  const [branchPeriod, setBranchPeriod] = useState<'today' | 'week' | 'month'>('week');
+  const [branchPeriod, setBranchPeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'custom'>('week');
+  const [branchCustomFrom, setBranchCustomFrom] = useState('');
+  const [branchCustomTo, setBranchCustomTo] = useState('');
 
   const { branchFrom, branchTo, branchLabel } = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    if (branchPeriod === 'today') {
+    if (branchPeriod === 'today')
       return { branchFrom: todayStart, branchTo: now, branchLabel: 'Hoy' };
+    if (branchPeriod === 'yesterday') {
+      const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
+      const yEnd   = new Date(todayStart); yEnd.setMilliseconds(-1);
+      return { branchFrom: yStart, branchTo: yEnd, branchLabel: 'Ayer' };
     }
     if (branchPeriod === 'week') {
-      const weekStart = new Date(todayStart);
-      weekStart.setDate(weekStart.getDate() - 6);
+      const weekStart = new Date(todayStart); weekStart.setDate(weekStart.getDate() - 6);
       return { branchFrom: weekStart, branchTo: now, branchLabel: 'Últimos 7 días' };
+    }
+    if (branchPeriod === 'custom') {
+      const from = branchCustomFrom ? new Date(branchCustomFrom + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth(), 1);
+      const to   = branchCustomTo   ? new Date(branchCustomTo   + 'T23:59:59') : now;
+      const label = branchCustomFrom
+        ? `${new Date(branchCustomFrom + 'T12:00:00').toLocaleDateString('es-PR')}${branchCustomTo ? ' – ' + new Date(branchCustomTo + 'T12:00:00').toLocaleDateString('es-PR') : ''}`
+        : 'Rango personalizado';
+      return { branchFrom: from, branchTo: to, branchLabel: label };
     }
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
     return { branchFrom: monthStart, branchTo: now, branchLabel: 'Este mes' };
-  }, [branchPeriod]);
+  }, [branchPeriod, branchCustomFrom, branchCustomTo]);
 
   const { data: branchSales } = trpc.dashboard.salesByWarehouse.useQuery({ from: branchFrom, to: branchTo });
 
@@ -254,9 +267,9 @@ export function ReportsClient() {
               {branchLabel}
             </span>
           </div>
-          <div className="flex gap-1">
-            {(['today', 'week', 'month'] as const).map((p) => {
-              const pLabels: Record<string, string> = { today: 'Hoy', week: 'Semana', month: 'Mes' };
+          <div className="flex flex-wrap gap-1 items-center">
+            {(['today', 'yesterday', 'week', 'month', 'custom'] as const).map((p) => {
+              const pLabels: Record<string, string> = { today: 'Hoy', yesterday: 'Ayer', week: 'Semana', month: 'Mes', custom: 'Entre fechas' };
               return (
                 <button key={p} onClick={() => setBranchPeriod(p)}
                   className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
@@ -267,6 +280,17 @@ export function ReportsClient() {
                 </button>
               );
             })}
+            {branchPeriod === 'custom' && (
+              <>
+                <input type="date" value={branchCustomFrom} onChange={e => setBranchCustomFrom(e.target.value)}
+                  className="text-xs px-2 py-1 rounded-lg border outline-none"
+                  style={{ color: brand.navy[800], borderColor: '#E2E8F0' }} />
+                <span className="text-xs" style={{ color: '#94A3B8' }}>al</span>
+                <input type="date" value={branchCustomTo} onChange={e => setBranchCustomTo(e.target.value)}
+                  className="text-xs px-2 py-1 rounded-lg border outline-none"
+                  style={{ color: brand.navy[800], borderColor: '#E2E8F0' }} />
+              </>
+            )}
           </div>
         </div>
         {branchSales && branchSales.length > 0 ? (() => {

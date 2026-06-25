@@ -162,9 +162,11 @@ const MOVEMENT_TYPE_LABEL: Record<string, string> = {
 };
 
 const PERIOD_OPTS = [
-  { key: 'today', label: 'Hoy',        kpiLabel: 'del día',           days: 7  },
-  { key: 'week',  label: 'Esta semana', kpiLabel: 'últimos 7 días',    days: 7  },
-  { key: 'month', label: 'Este mes',    kpiLabel: 'del mes',           days: 30 },
+  { key: 'today',     label: 'Hoy',              kpiLabel: 'del día',           days: 7  },
+  { key: 'yesterday', label: 'Ayer',              kpiLabel: 'de ayer',           days: 7  },
+  { key: 'week',      label: 'Esta semana',       kpiLabel: 'últimos 7 días',    days: 7  },
+  { key: 'month',     label: 'Este mes',          kpiLabel: 'del mes',           days: 30 },
+  { key: 'custom',    label: 'Entre fechas',      kpiLabel: 'del período',       days: 30 },
 ] as const;
 type KpiPeriod = typeof PERIOD_OPTS[number]['key'];
 
@@ -174,6 +176,8 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
   const [kpiPeriod, setKpiPeriod] = useState<KpiPeriod>('today');
   const [showPeriodMenu, setShowPeriodMenu] = useState(false);
   const periodMenuRef = useRef<HTMLDivElement>(null);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   // Compute date range on the CLIENT to respect local timezone (PR = UTC-4).
   // Without this, the server's UTC "today" cuts off at 8 PM local time.
@@ -182,13 +186,22 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
     if (kpiPeriod === 'today')
       return { kpiFrom: todayStart, kpiTo: now, chartDays: 7 };
+    if (kpiPeriod === 'yesterday') {
+      const yStart = new Date(todayStart); yStart.setDate(yStart.getDate() - 1);
+      const yEnd   = new Date(todayStart); yEnd.setMilliseconds(-1);
+      return { kpiFrom: yStart, kpiTo: yEnd, chartDays: 7 };
+    }
     if (kpiPeriod === 'week') {
-      const d = new Date(todayStart);
-      d.setDate(d.getDate() - 6);
+      const d = new Date(todayStart); d.setDate(d.getDate() - 6);
       return { kpiFrom: d, kpiTo: now, chartDays: 7 };
     }
+    if (kpiPeriod === 'custom') {
+      const from = customFrom ? new Date(customFrom + 'T00:00:00') : new Date(now.getFullYear(), now.getMonth(), 1);
+      const to   = customTo   ? new Date(customTo   + 'T23:59:59') : now;
+      return { kpiFrom: from, kpiTo: to, chartDays: 30 };
+    }
     return { kpiFrom: new Date(now.getFullYear(), now.getMonth(), 1), kpiTo: now, chartDays: 30 };
-  }, [kpiPeriod]);
+  }, [kpiPeriod, customFrom, customTo]);
 
   useEffect(() => {
     if (!showPeriodMenu) return;
@@ -276,15 +289,19 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-xl transition-all hover:shadow-md"
               style={{ ...glass, color: brand.navy[800] }}
             >
-              Ver: <span className="font-semibold">{currentPeriod.label}</span>
+              Ver: <span className="font-semibold">
+                {kpiPeriod === 'custom' && customFrom
+                  ? `${new Date(customFrom + 'T12:00:00').toLocaleDateString('es-PR', { day: '2-digit', month: 'short' })}${customTo ? ' – ' + new Date(customTo + 'T12:00:00').toLocaleDateString('es-PR', { day: '2-digit', month: 'short' }) : ''}`
+                  : currentPeriod.label}
+              </span>
               <ChevronDown size={13} style={{ transform: showPeriodMenu ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s' }} />
             </button>
             {showPeriodMenu && (
-              <div className="absolute right-0 top-full mt-1.5 rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden z-50" style={{ minWidth: 160 }}>
+              <div className="absolute right-0 top-full mt-1.5 rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden z-50" style={{ minWidth: 200 }}>
                 {PERIOD_OPTS.map(opt => (
                   <button
                     key={opt.key}
-                    onClick={() => { setKpiPeriod(opt.key); setShowPeriodMenu(false); }}
+                    onClick={() => { setKpiPeriod(opt.key); if (opt.key !== 'custom') setShowPeriodMenu(false); }}
                     className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left transition-colors hover:bg-slate-50"
                     style={{ color: kpiPeriod === opt.key ? brand.orange[500] : brand.navy[800], fontWeight: kpiPeriod === opt.key ? 600 : 400 }}
                   >
@@ -292,6 +309,21 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
                     {kpiPeriod === opt.key && <CheckCircle2 size={14} style={{ color: brand.orange[500] }} />}
                   </button>
                 ))}
+                {kpiPeriod === 'custom' && (
+                  <div className="px-3 pb-3 pt-1 space-y-2 border-t border-slate-100">
+                    <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border outline-none"
+                      style={{ color: brand.navy[800], borderColor: '#E2E8F0' }} />
+                    <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 rounded-lg border outline-none"
+                      style={{ color: brand.navy[800], borderColor: '#E2E8F0' }} />
+                    <button onClick={() => setShowPeriodMenu(false)}
+                      className="w-full py-1.5 text-xs font-semibold rounded-lg text-white"
+                      style={{ backgroundColor: brand.orange[500] }}>
+                      Aplicar
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
