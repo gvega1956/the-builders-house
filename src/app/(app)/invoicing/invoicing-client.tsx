@@ -681,6 +681,23 @@ export function InvoicingClient({ role }: { role: string }) {
     setLines((l) => [...l, { productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 }]);
   }
 
+  function autoLocationForBranch(productId: string, warehouseId: string) {
+    if (!warehouseId || !warehouses) return '';
+    const wh = warehouses.find((w) => w.id === warehouseId);
+    const loc = wh?.locations.find((l) => (l as unknown as { productId: string }).productId === productId);
+    return loc?.id ?? '';
+  }
+
+  // Cuando cambia la sucursal, reasigna locationId en todas las líneas existentes
+  useEffect(() => {
+    if (!branchId || !warehouses) return;
+    setLines((ls) => ls.map((line) => {
+      if (!line.productId) return line;
+      return { ...line, locationId: autoLocationForBranch(line.productId, branchId) };
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId, warehouses]);
+
   function updateLine(i: number, field: keyof LineItem, value: string) {
     setLines((ls) => ls.map((l, idx) => {
       if (idx !== i) return l;
@@ -693,7 +710,8 @@ export function InvoicingClient({ role }: { role: string }) {
             s + loc.quantityOnHand - loc.reservedQuantity,
           0,
         ) ?? 0;
-        return { ...l, productId: value, productName: p?.name ?? '', productSku: p?.sku ?? '', unitPrice: String(price), locationId: '', availableStock: totalAvail };
+        const autoLoc = branchId ? autoLocationForBranch(value, branchId) : '';
+        return { ...l, productId: value, productName: p?.name ?? '', productSku: p?.sku ?? '', unitPrice: String(price), locationId: autoLoc, availableStock: totalAvail };
       }
       return { ...l, [field]: value };
     }));
@@ -701,12 +719,15 @@ export function InvoicingClient({ role }: { role: string }) {
 
   function getLocationsForProduct(productId: string) {
     if (!productId || !warehouses) return [];
-    return (warehouses ?? []).flatMap((wh) =>
+    const scope = branchId
+      ? (warehouses ?? []).filter((wh) => wh.id === branchId)
+      : (warehouses ?? []);
+    return scope.flatMap((wh) =>
       wh.locations
         .filter((loc) => (loc as unknown as { productId: string }).productId === productId)
         .map((loc) => ({
           id: loc.id,
-          label: `${wh.name} — ${loc.locationCode}`,
+          label: branchId ? loc.locationCode : `${wh.name} — ${loc.locationCode}`,
           available: loc.quantityOnHand - loc.reservedQuantity,
         })),
     );
@@ -1604,16 +1625,23 @@ export function InvoicingClient({ role }: { role: string }) {
                             {line.productId && (
                               <div className="px-2 pb-2 bg-white flex items-center gap-2">
                                 {invoiceType !== 'QUOTE' && (
-                                  <select value={line.locationId} onChange={(e) => updateLine(i, 'locationId', e.target.value)}
-                                    className="flex-1 px-2 py-1 rounded-lg border text-xs outline-none"
-                                    style={{ color: brand.navy[900], borderColor: !line.locationId ? '#FCA5A5' : '#E2E8F0' }}>
-                                    <option value="">Seleccionar ubicación *</option>
-                                    {locOptions.length === 0
-                                      ? <option disabled>Sin stock en sistema</option>
-                                      : locOptions.map((loc) => (
+                                  branchId && line.locationId && locOptions.length <= 1 ? (
+                                    // Sucursal seleccionada + ubicación auto-asignada → badge de confirmación
+                                    <span className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold"
+                                      style={{ backgroundColor: '#F0FDF4', color: '#166534', border: '1px solid #BBF7D0' }}>
+                                      <CheckCircle2 size={11} />
+                                      {locOptions[0]?.label ?? line.locationId} · {locOptions[0]?.available ?? 0} disp.
+                                    </span>
+                                  ) : (
+                                    <select value={line.locationId} onChange={(e) => updateLine(i, 'locationId', e.target.value)}
+                                      className="flex-1 px-2 py-1 rounded-lg border text-xs outline-none"
+                                      style={{ color: brand.navy[900], borderColor: !line.locationId ? '#FCA5A5' : '#E2E8F0' }}>
+                                      <option value="">{branchId ? 'Sin stock en esta sucursal' : 'Seleccionar ubicación *'}</option>
+                                      {locOptions.map((loc) => (
                                         <option key={loc.id} value={loc.id}>{loc.label} ({loc.available} disp.)</option>
                                       ))}
-                                  </select>
+                                    </select>
+                                  )
                                 )}
                                 {overstock && (
                                   <span className="flex items-center gap-1 text-xs font-semibold shrink-0" style={{ color: '#DC2626' }}>
