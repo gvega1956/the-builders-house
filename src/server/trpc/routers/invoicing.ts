@@ -6,6 +6,7 @@ import { getNextSequenceValue } from '@/lib/sequences';
 import { toDecimal } from '@/lib/money';
 import { calculateAvailableStock } from '@/lib/inventory';
 import { detectInvoiceVoidAnomalies, detectInvoiceCreateAnomalies } from '@/lib/anomaly-detector';
+import { sendInvoiceEmail, type InvoiceEmailData } from '@/lib/email';
 
 // locationId es opcional a nivel de schema; superRefine en el objeto padre
 // lo hace requerido cuando type === 'INVOICE' o 'CREDIT_NOTE'.
@@ -608,6 +609,48 @@ export const invoicingRouter = createTRPCRouter({
         },
         ctx.req.headers.get('x-forwarded-for') ?? undefined,
       );
+
+      // Email automático al cliente — fire-and-forget, no bloquea la respuesta
+      if (invoice.status === 'ISSUED') {
+        void (async () => {
+          try {
+            const full = await ctx.db.invoice.findUnique({
+              where: { id: invoice.id },
+              include: {
+                customer: { select: { name: true, email: true } },
+                branch: { select: { name: true } },
+                items: { include: { product: { select: { name: true, sku: true } } } },
+              },
+            });
+            if (!full?.customer.email) return;
+            const emailData: InvoiceEmailData = {
+              to: full.customer.email,
+              customerName: full.customer.name,
+              invoiceNumber: full.invoiceNumber,
+              invoiceDate: full.createdAt.toLocaleDateString('es-PR'),
+              dueDate: full.dueDate?.toLocaleDateString('es-PR'),
+              branchName: full.branch?.name,
+              items: full.items.map((it) => ({
+                name: it.product.name,
+                sku: it.product.sku,
+                quantity: it.quantity,
+                unitPrice: Number(it.unitPrice),
+                discount: Number(it.discountPercent),
+                lineTotal: Number(it.lineTotal),
+              })),
+              subtotal: Number(full.subtotal),
+              taxRate: Number(full.taxRate),
+              taxAmount: Number(full.taxAmount),
+              total: Number(full.total),
+              paymentTerms: full.paymentTerms,
+              notes: full.notes ?? undefined,
+            };
+            await sendInvoiceEmail(emailData);
+          } catch (err) {
+            console.error('[invoice-email] failed:', err);
+          }
+        })();
+      }
 
       return invoice;
     }),

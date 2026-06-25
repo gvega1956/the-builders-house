@@ -1092,6 +1092,37 @@ export function InvoicingClient({ role }: { role: string }) {
             border-radius: 0 !important;
             background: white !important;
           }
+          /* Eliminar fondos de color — solo blanco y negro */
+          #invoice-print-area [style*="background"],
+          #invoice-print-area [style*="backgroundColor"],
+          #invoice-print-area [class*="bg-"] {
+            background: transparent !important;
+            background-color: transparent !important;
+          }
+          /* Texto negro para máximo contraste sin tinta de color */
+          #invoice-print-area td, #invoice-print-area th,
+          #invoice-print-area span, #invoice-print-area div {
+            color: #000 !important;
+          }
+          /* Badges de estado: solo borde, sin fondo */
+          #invoice-print-area span[style*="borderRadius"],
+          #invoice-print-area span[style*="border-radius"] {
+            border: 1px solid #000 !important;
+            background: transparent !important;
+            color: #000 !important;
+          }
+          /* Filas alternadas: trama gris muy suave en lugar de color */
+          #invoice-print-area tr:nth-child(even) td {
+            background-color: #f5f5f5 !important;
+          }
+          /* Encabezados de tabla: línea inferior negra */
+          #invoice-print-area thead tr {
+            border-bottom: 2px solid #000 !important;
+            background: transparent !important;
+          }
+          #invoice-print-area tfoot tr {
+            border-top: 2px solid #000 !important;
+          }
           .print\\:hidden { display: none !important; }
           @page { margin: 1.2cm; size: landscape; }
         }
@@ -1422,6 +1453,21 @@ export function InvoicingClient({ role }: { role: string }) {
                     )}
                   </div>
 
+                  {/* Branch / Sucursal — primero para filtrar contexto */}
+                  {invoiceType !== 'QUOTE' && (
+                    <div>
+                      <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Sucursal *</label>
+                      <select value={branchId} onChange={(e) => setBranchId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border text-sm outline-none"
+                        style={{ color: brand.navy[900], borderColor: !branchId ? '#FCA5A5' : '#E2E8F0' }}>
+                        <option value="">Seleccionar sucursal...</option>
+                        {(warehouses ?? []).map((w) => (
+                          <option key={w.id} value={w.id}>{w.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
                   {/* Customer */}
                   <div>
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Cliente *</label>
@@ -1447,21 +1493,6 @@ export function InvoicingClient({ role }: { role: string }) {
                       </div>
                     )}
                   </div>
-
-                  {/* Branch / Sucursal */}
-                  {invoiceType !== 'QUOTE' && (
-                    <div>
-                      <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Sucursal *</label>
-                      <select value={branchId} onChange={(e) => setBranchId(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border text-sm outline-none"
-                        style={{ color: brand.navy[900], borderColor: !branchId ? '#FCA5A5' : '#E2E8F0' }}>
-                        <option value="">Seleccionar sucursal...</option>
-                        {(warehouses ?? []).map((w) => (
-                          <option key={w.id} value={w.id}>{w.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
 
                   {/* Payment mode + IVU toggle */}
                   <div className="grid grid-cols-2 gap-3">
