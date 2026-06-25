@@ -1,7 +1,5 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export type InvoiceEmailData = {
   to: string;
   customerName: string;
@@ -127,6 +125,7 @@ export async function sendInvoiceEmail(data: InvoiceEmailData): Promise<{ succes
   }
 
   try {
+    const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
       from: process.env.EMAIL_FROM ?? 'facturas@buildershouse.pr',
       to: data.to,
