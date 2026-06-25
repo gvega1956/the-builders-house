@@ -296,4 +296,56 @@ export const dashboardRouter = createTRPCRouter({
       totalAlerts: rows.length,
     };
   }),
+
+  // Ventas del período desglosadas por sucursal (warehouse).
+  // Sigue la cadena: Invoice → InvoiceItem.locationId → ProductLocation → Warehouse.
+  salesByWarehouse: protectedProcedure
+    .input(
+      z
+        .object({
+          from: z.date().optional(),
+          to:   z.date().optional(),
+        })
+        .optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const from = input?.from ?? todayStart;
+      const to   = input?.to   ?? now;
+
+      const rows = await ctx.db.$queryRaw<Array<{
+        warehouse_id:   string;
+        warehouse_name: string;
+        total:          number;
+        invoice_count:  bigint;
+        units_sold:     bigint;
+      }>>`
+        SELECT
+          w.id                                      AS warehouse_id,
+          w.name                                    AS warehouse_name,
+          COALESCE(SUM(ii."lineTotal"), 0)::float8  AS total,
+          COUNT(DISTINCT i.id)                      AS invoice_count,
+          COALESCE(SUM(ii.quantity), 0)::bigint     AS units_sold
+        FROM warehouses w
+        LEFT JOIN product_locations pl ON pl."warehouseId" = w.id
+        LEFT JOIN invoice_items ii     ON ii."locationId"  = pl.id
+        LEFT JOIN invoices i           ON i.id = ii."invoiceId"
+          AND i.type   = 'INVOICE'
+          AND i.status IN ('PAID', 'PARTIAL', 'ISSUED')
+          AND i."createdAt" >= ${from}
+          AND i."createdAt" <= ${to}
+        WHERE w."isActive" = true
+        GROUP BY w.id, w.name
+        ORDER BY total DESC
+      `;
+
+      return rows.map((r) => ({
+        warehouseId:   r.warehouse_id,
+        warehouseName: r.warehouse_name,
+        total:         Number(r.total),
+        invoiceCount:  Number(r.invoice_count),
+        unitsSold:     Number(r.units_sold),
+      }));
+    }),
 });

@@ -202,6 +202,7 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
 
   const { data: kpis } = trpc.dashboard.kpis.useQuery({ from: kpiFrom, to: kpiTo });
   const { data: salesByDay } = trpc.dashboard.salesByDay.useQuery({ days: chartDays });
+  const { data: branchSales } = trpc.dashboard.salesByWarehouse.useQuery({ from: kpiFrom, to: kpiTo });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
   const { data: stockAlerts } = trpc.dashboard.stockAlerts.useQuery();
@@ -498,6 +499,47 @@ export function DashboardClient({ userName: fullName }: { userName: string }) {
           color="amber"
         />
       </div>
+
+      {/* ── Ventas por sucursal ── */}
+      {branchSales && branchSales.length > 0 && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${branchSales.length}, 1fr)` }}>
+          {branchSales.map((branch) => {
+            const pct = salesToday > 0 ? (branch.total / salesToday) * 100 : 0;
+            return (
+              <div key={branch.warehouseId} className="rounded-2xl p-4" style={glass}>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-widest mb-1" style={{ color: '#94A3B8' }}>
+                      Sucursal
+                    </div>
+                    <div className="text-base font-bold" style={{ color: brand.navy[950] }}>
+                      {branch.warehouseName}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-bold" style={{ color: brand.orange[500] }}>
+                      {formatCurrency(branch.total)}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-0.5">
+                      {branch.invoiceCount} {branch.invoiceCount === 1 ? 'factura' : 'facturas'} · {branch.unitsSold} u
+                    </div>
+                  </div>
+                </div>
+                {/* Barra de progreso relativa al total */}
+                <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(pct, 100)}%`, background: `linear-gradient(90deg, ${brand.orange[500]}, ${brand.orange[400]})` }}
+                  />
+                </div>
+                <div className="text-[10px] mt-1.5 font-medium" style={{ color: '#94A3B8' }}>
+                  {pct.toFixed(0)}% del total · {currentPeriod.label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Gráficas */}
       <div className="grid grid-cols-3 gap-4">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -9,7 +9,7 @@ import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers, Download, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
 
 const PIE_COLORS = [brand.orange[500], brand.navy[700], brand.orange[400], brand.navy[600], '#059669'];
 
@@ -27,6 +27,25 @@ export function ReportsClient() {
   const [activeTab, setActiveTab] = useState<'summary' | 'movements'>('summary');
   const [movPage, setMovPage] = useState(1);
   const [movType, setMovType] = useState('');
+  const [branchPeriod, setBranchPeriod] = useState<'today' | 'week' | 'month'>('week');
+
+  const { branchFrom, branchTo, branchLabel } = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    if (branchPeriod === 'today') {
+      return { branchFrom: todayStart, branchTo: now, branchLabel: 'Hoy' };
+    }
+    if (branchPeriod === 'week') {
+      const weekStart = new Date(todayStart);
+      weekStart.setDate(weekStart.getDate() - 6);
+      return { branchFrom: weekStart, branchTo: now, branchLabel: 'Últimos 7 días' };
+    }
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    return { branchFrom: monthStart, branchTo: now, branchLabel: 'Este mes' };
+  }, [branchPeriod]);
+
+  const { data: branchSales } = trpc.dashboard.salesByWarehouse.useQuery({ from: branchFrom, to: branchTo });
+
   const { data: kpis } = trpc.dashboard.kpis.useQuery();
   const { data: salesData } = trpc.dashboard.salesByDay.useQuery({ days: 30 });
   const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
@@ -221,6 +240,80 @@ export function ReportsClient() {
             <div className="text-xs text-slate-400 mt-1">{k.sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* Ventas por Sucursal */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Building2 size={16} style={{ color: brand.navy[700] }} />
+            <h2 className="text-sm font-bold uppercase tracking-wide" style={{ color: brand.navy[800] }}>
+              Ventas por Sucursal
+            </h2>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>
+              {branchLabel}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            {(['today', 'week', 'month'] as const).map((p) => {
+              const pLabels: Record<string, string> = { today: 'Hoy', week: 'Semana', month: 'Mes' };
+              return (
+                <button key={p} onClick={() => setBranchPeriod(p)}
+                  className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
+                  style={branchPeriod === p
+                    ? { backgroundColor: brand.navy[950], color: '#FFFFFF' }
+                    : { backgroundColor: '#F1F5F9', color: '#64748B' }}>
+                  {pLabels[p]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {branchSales && branchSales.length > 0 ? (() => {
+          const grandTotal = branchSales.reduce((s, b) => s + b.total, 0);
+          const cols = branchSales.length <= 2 ? 'grid-cols-2' : branchSales.length === 3 ? 'grid-cols-3' : 'grid-cols-4';
+          return (
+            <div className={`grid ${cols} gap-4`}>
+              {branchSales.map((branch) => {
+                const pct = grandTotal > 0 ? (branch.total / grandTotal) * 100 : 0;
+                return (
+                  <div key={branch.warehouseId} style={glass} className="rounded-2xl p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+                        style={{ backgroundColor: `${brand.orange[500]}18` }}>
+                        <Building2 size={18} style={{ color: brand.orange[500] }} />
+                      </div>
+                      <span className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                        style={{ backgroundColor: '#F0FDF4', color: '#16A34A' }}>
+                        {pct.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="text-xl font-bold" style={{ color: brand.navy[950] }}>
+                      {formatCurrency(branch.total)}
+                    </div>
+                    <div className="text-xs font-semibold mt-0.5" style={{ color: '#64748B' }}>
+                      {branch.warehouseName}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      {branch.invoiceCount} facturas · {branch.unitsSold} unidades
+                    </div>
+                    {grandTotal > 0 && (
+                      <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: '#E2E8F0' }}>
+                        <div className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, backgroundColor: brand.orange[500] }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })() : (
+          <div style={glass} className="rounded-2xl p-6 flex flex-col items-center justify-center gap-2 text-slate-400 text-sm">
+            <Building2 size={32} style={{ color: '#CBD5E1' }} />
+            <span>No hay ventas en el período seleccionado</span>
+          </div>
+        )}
       </div>
 
       {/* Charts Row 1 */}
