@@ -13,6 +13,7 @@ import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
 import { getNextSequenceValue } from '@/lib/sequences';
 import { toDecimal } from '@/lib/money';
+import { prMonthStart } from '@/lib/timezone';
 
 // ─── Tipos internos ───────────────────────────────────────────────────────────
 
@@ -82,15 +83,15 @@ export const cxcRouter = createTRPCRouter({
       .sort((a, b) => b.balance - a.balance)
       .slice(0, 10);
 
-    // Cobros del mes actual
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    // Cobros del mes actual — límite en hora PR para incluir pagos del día 1 hasta las 12 AM PR
+    const startOfMonth     = prMonthStart(now);
+    const startOfLastMonth = prMonthStart(new Date(now.getFullYear(), now.getMonth() - 1, 15));
     const collectedThisMonth = await ctx.db.payment.aggregate({
       _sum: { amount: true },
       where: { paidAt: { gte: startOfMonth } },
     });
 
     // Cobros del mes anterior (para comparativa)
-    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const collectedLastMonth = await ctx.db.payment.aggregate({
       _sum: { amount: true },
       where: { paidAt: { gte: startOfLastMonth, lt: startOfMonth } },
