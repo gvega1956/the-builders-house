@@ -117,6 +117,73 @@ export const settingsRouter = createTRPCRouter({
       return updated;
     }),
 
+  // ── My Profile ──────────────────────────────────────────────────────────
+
+  getMyProfile: protectedProcedure.query(async ({ ctx }) => {
+    const user = await ctx.db.user.findUnique({
+      where: { id: ctx.session!.user!.id! },
+      select: { id: true, name: true, email: true, role: true },
+    });
+    if (!user) throw new TRPCError({ code: 'NOT_FOUND' });
+    return user;
+  }),
+
+  updateMyProfile: protectedProcedure
+    .input(
+      z.object({
+        name: z.string().min(1, 'El nombre es requerido').max(100),
+        email: z.string().email('Email inválido').max(254),
+        currentPassword: z.string().optional(),
+        newPassword: z.string().min(8, 'Mínimo 8 caracteres').max(128).optional(),
+        confirmPassword: z.string().optional(),
+      }).refine(
+        (d) => !d.newPassword || d.newPassword === d.confirmPassword,
+        { message: 'Las contraseñas no coinciden', path: ['confirmPassword'] }
+      ).refine(
+        (d) => !d.newPassword || !!d.currentPassword,
+        { message: 'Se requiere la contraseña actual para cambiarla', path: ['currentPassword'] }
+      )
+    )
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session!.user!.id!;
+      const user = await ctx.db.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true, passwordHash: true },
+      });
+      if (!user) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      if (input.email !== user.email) {
+        const existing = await ctx.db.user.findUnique({ where: { email: input.email } });
+        if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'Ese email ya está en uso por otro usuario' });
+      }
+
+      let passwordHash: string | undefined;
+      if (input.newPassword) {
+        const valid = await bcryptjs.compare(input.currentPassword ?? '', user.passwordHash ?? '');
+        if (!valid) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Contraseña actual incorrecta' });
+        passwordHash = await bcryptjs.hash(input.newPassword, 12);
+      }
+
+      const updated = await ctx.db.user.update({
+        where: { id: userId },
+        data: { name: input.name, email: input.email, ...(passwordHash && { passwordHash }) },
+        select: { id: true, name: true, email: true, role: true },
+      });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId,
+          action: 'UPDATE_MY_PROFILE',
+          entityType: 'User',
+          entityId: userId,
+          oldValues: { name: user.name, email: user.email } as Prisma.InputJsonValue,
+          newValues: { name: input.name, email: input.email, passwordChanged: !!passwordHash } as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    }),
+
   // ── Categories ──────────────────────────────────────────────────────────
 
   categories: protectedProcedure.query(async ({ ctx }) => {

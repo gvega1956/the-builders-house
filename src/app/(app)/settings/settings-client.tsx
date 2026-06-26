@@ -5,9 +5,10 @@ import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
-import { Plus, X, Users, Tag, Warehouse, Truck, Pencil, SlidersHorizontal, FileText } from 'lucide-react';
+import { Plus, X, Users, Tag, Warehouse, Truck, Pencil, SlidersHorizontal, FileText, UserCircle } from 'lucide-react';
 
 const TABS = [
+  { id: 'profile', label: 'Mi Perfil', icon: UserCircle },
   { id: 'users', label: 'Usuarios', icon: Users },
   { id: 'categories', label: 'Categorías', icon: Tag },
   { id: 'warehouses', label: 'Almacenes', icon: Warehouse },
@@ -26,9 +27,18 @@ const ROLES: Record<string, string> = {
 };
 
 export function SettingsClient() {
-  const [tab, setTab] = useState<Tab>('users');
+  const [tab, setTab] = useState<Tab>('profile');
   const [modal, setModal] = useState('');
   const [error, setError] = useState('');
+
+  // My Profile
+  const [myName, setMyName] = useState('');
+  const [myEmail, setMyEmail] = useState('');
+  const [myCurrentPw, setMyCurrentPw] = useState('');
+  const [myNewPw, setMyNewPw] = useState('');
+  const [myConfirmPw, setMyConfirmPw] = useState('');
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState(false);
 
   // Users — create
   const [uName, setUName] = useState(''); const [uEmail, setUEmail] = useState('');
@@ -103,6 +113,23 @@ export function SettingsClient() {
       setSalesTargetInput(sysConfig.SALES_TARGET);
     }
   }, [sysConfig, taxRateInput, salesTargetInput]);
+
+  const { data: myProfile } = trpc.settings.getMyProfile.useQuery();
+  React.useEffect(() => {
+    if (myProfile) {
+      setMyName((prev) => prev || myProfile.name);
+      setMyEmail((prev) => prev || myProfile.email);
+    }
+  }, [myProfile]);
+
+  const updateMyProfile = trpc.settings.updateMyProfile.useMutation({
+    onSuccess: () => {
+      setProfileSuccess(true);
+      setProfileError('');
+      setMyCurrentPw(''); setMyNewPw(''); setMyConfirmPw('');
+    },
+    onError: (e) => { setProfileError(e.message); setProfileSuccess(false); },
+  });
 
   const { data: users, refetch: refetchUsers } = trpc.settings.users.useQuery();
   const { data: categories, refetch: refetchCats } = trpc.settings.categories.useQuery();
@@ -603,6 +630,71 @@ export function SettingsClient() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── MI PERFIL ── */}
+      {tab === 'profile' && (
+        <div className="max-w-lg space-y-5">
+          <div style={glass} className="rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold" style={{ color: brand.navy[950] }}>Información personal</h3>
+              {myProfile && (
+                <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                  style={{ backgroundColor: myProfile.role === 'ADMIN' ? brand.orange[50] : '#F1F5F9', color: myProfile.role === 'ADMIN' ? brand.orange[600] : '#475569' }}>
+                  {ROLES[myProfile.role] ?? myProfile.role}
+                </span>
+              )}
+            </div>
+            <F label="Nombre *">
+              <input value={myName} onChange={(e) => setMyName(e.target.value)} placeholder="Tu nombre completo" />
+            </F>
+            <F label="Email *">
+              <input type="email" value={myEmail} onChange={(e) => setMyEmail(e.target.value)} placeholder="tu@email.com" />
+            </F>
+          </div>
+
+          <div style={glass} className="rounded-2xl p-6 space-y-4">
+            <h3 className="text-sm font-bold" style={{ color: brand.navy[950] }}>
+              Cambiar contraseña <span className="font-normal" style={{ color: '#94A3B8' }}>(opcional)</span>
+            </h3>
+            <F label="Contraseña actual">
+              <input type="password" value={myCurrentPw} onChange={(e) => setMyCurrentPw(e.target.value)} placeholder="Tu contraseña actual" autoComplete="current-password" />
+            </F>
+            <F label="Nueva contraseña">
+              <input type="password" value={myNewPw} onChange={(e) => setMyNewPw(e.target.value)} placeholder="Mínimo 8 caracteres" autoComplete="new-password" />
+            </F>
+            <F label="Confirmar nueva contraseña">
+              <input type="password" value={myConfirmPw} onChange={(e) => setMyConfirmPw(e.target.value)} placeholder="Repite la nueva contraseña" autoComplete="new-password" />
+            </F>
+          </div>
+
+          {profileError && (
+            <div className="px-3 py-2 rounded-xl text-sm text-red-700 bg-red-50 border border-red-200">{profileError}</div>
+          )}
+          {profileSuccess && (
+            <div className="px-3 py-2 rounded-xl text-sm font-medium" style={{ color: '#166534', background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+              Perfil actualizado correctamente.
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              setProfileError('');
+              setProfileSuccess(false);
+              updateMyProfile.mutate({
+                name: myName.trim(),
+                email: myEmail.trim(),
+                currentPassword: myCurrentPw || undefined,
+                newPassword: myNewPw || undefined,
+                confirmPassword: myConfirmPw || undefined,
+              });
+            }}
+            disabled={updateMyProfile.isPending || !myName.trim() || !myEmail.trim()}
+            className="px-6 py-2.5 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
+            style={{ background: `linear-gradient(135deg, ${brand.orange[500]}, ${brand.orange[600]})` }}>
+            {updateMyProfile.isPending ? 'Guardando...' : 'Guardar Cambios'}
+          </button>
         </div>
       )}
 
