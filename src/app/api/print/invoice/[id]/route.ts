@@ -28,6 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<Recor
     headers: {
       'Content-Type': 'application/pdf',
       'Content-Disposition': `inline; filename="${invoice.invoiceNumber}.pdf"`,
+      'Cache-Control': 'no-store',
     },
   });
 

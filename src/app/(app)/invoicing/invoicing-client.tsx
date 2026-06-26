@@ -653,7 +653,7 @@ export function InvoicingClient({ role }: { role: string }) {
   );
 
   const updateMutation = trpc.invoicing.update.useMutation({
-    onSuccess: () => { refetch(); closeModal(); },
+    onSuccess: () => { refetch(); refetchDetail(); closeModal(); },
     onError: (e) => setError(e.message),
   });
 
