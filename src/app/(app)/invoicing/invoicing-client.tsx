@@ -608,7 +608,7 @@ export function InvoicingClient({ role }: { role: string }) {
     { enabled: activeTab === 'ar' },
   );
   const { data: customerResults } = trpc.customers.list.useQuery(
-    { search: customerSearch, pageSize: 8 },
+    { search: customerSearch, pageSize: 8, searchFields: 'name_code' },
     { enabled: customerSearch.length >= 2 },
   );
   const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });

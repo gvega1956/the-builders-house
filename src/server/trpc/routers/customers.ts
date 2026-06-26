@@ -23,25 +23,31 @@ export const customersRouter = createTRPCRouter({
         search: z.string().optional(),
         type: z.enum(['RETAIL', 'WHOLESALE']).optional(),
         includeInactive: z.boolean().optional(),
+        searchFields: z.enum(['all', 'name_code']).default('all'),
         page: z.number().int().min(1).default(1),
         pageSize: z.number().int().min(1).max(1000).default(50),
       }).optional()
     )
     .query(async ({ ctx, input }) => {
-      const { search, type, includeInactive, page = 1, pageSize = 50 } = input ?? {};
+      const { search, type, includeInactive, searchFields = 'all', page = 1, pageSize = 50 } = input ?? {};
       const skip = (page - 1) * pageSize;
 
       const where: Prisma.CustomerWhereInput = {
         ...(includeInactive ? {} : { isActive: true }),
         ...(type && { type }),
         ...(search && {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' } },
-            { code: { contains: search, mode: 'insensitive' } },
-            { phone: { contains: search, mode: 'insensitive' } },
-            { email: { contains: search, mode: 'insensitive' } },
-            { municipality: { contains: search, mode: 'insensitive' } },
-          ],
+          OR: searchFields === 'name_code'
+            ? [
+                { name: { contains: search, mode: 'insensitive' } },
+                { code: { contains: search, mode: 'insensitive' } },
+              ]
+            : [
+                { name: { contains: search, mode: 'insensitive' } },
+                { code: { contains: search, mode: 'insensitive' } },
+                { phone: { contains: search, mode: 'insensitive' } },
+                { email: { contains: search, mode: 'insensitive' } },
+                { municipality: { contains: search, mode: 'insensitive' } },
+              ],
         }),
       };
 
