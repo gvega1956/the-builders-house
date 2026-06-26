@@ -191,7 +191,11 @@ export const settingsRouter = createTRPCRouter({
 
   warehouses: protectedProcedure.query(async ({ ctx }) => {
     return ctx.db.warehouse.findMany({
-      include: {
+      select: {
+        id: true, name: true, address: true, isActive: true,
+        legalName: true, displayName: true, city: true, state: true,
+        zipCode: true, phone: true, email: true, website: true,
+        ein: true, merchantRegistration: true,
         _count: { select: { locations: true } },
         locations: {
           include: { product: { select: { name: true, sku: true } } },
@@ -249,6 +253,52 @@ export const settingsRouter = createTRPCRouter({
           entityId: input.id,
           oldValues: { name: previous.name, address: previous.address, isActive: previous.isActive } as Prisma.InputJsonValue,
           newValues: input.data as Prisma.InputJsonValue,
+        },
+      });
+
+      return updated;
+    }),
+
+  updateWarehouseProfile: adminProcedure
+    .input(
+      z.object({
+        id:                   z.string().cuid(),
+        legalName:            z.string().max(200).optional().or(z.literal('')),
+        displayName:          z.string().max(100).optional().or(z.literal('')),
+        city:                 z.string().max(100).optional().or(z.literal('')),
+        state:                z.string().max(50).optional().or(z.literal('')),
+        zipCode:              z.string().max(10).optional().or(z.literal('')),
+        phone:                z.string().max(20).optional().or(z.literal('')),
+        email:                z.string().email().max(254).optional().or(z.literal('')),
+        website:              z.string().max(200).optional().or(z.literal('')),
+        ein:                  z.string().max(20).optional().or(z.literal('')),
+        merchantRegistration: z.string().max(50).optional().or(z.literal('')),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...fields } = input;
+      const previous = await ctx.db.warehouse.findUnique({ where: { id } });
+      if (!previous) throw new TRPCError({ code: 'NOT_FOUND', message: 'Almacén no encontrado' });
+
+      const data = Object.fromEntries(
+        Object.entries(fields).map(([k, v]) => [k, v === '' ? null : v])
+      );
+
+      const updated = await ctx.db.warehouse.update({ where: { id }, data });
+
+      await ctx.db.auditLog.create({
+        data: {
+          userId: ctx.session!.user!.id!,
+          action: 'UPDATE_WAREHOUSE_PROFILE',
+          entityType: 'Warehouse',
+          entityId: id,
+          oldValues: {
+            legalName: previous.legalName, displayName: previous.displayName,
+            city: previous.city, state: previous.state, zipCode: previous.zipCode,
+            phone: previous.phone, email: previous.email, website: previous.website,
+            ein: previous.ein, merchantRegistration: previous.merchantRegistration,
+          } as Prisma.InputJsonValue,
+          newValues: data as Prisma.InputJsonValue,
         },
       });
 
