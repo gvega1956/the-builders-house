@@ -5,7 +5,7 @@ import { trpc } from '@/lib/trpc';
 import { brand } from '@/lib/brand';
 import { formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
-import { Plus, X, Users, Tag, Warehouse, Truck, Pencil, SlidersHorizontal } from 'lucide-react';
+import { Plus, X, Users, Tag, Warehouse, Truck, Pencil, SlidersHorizontal, FileText } from 'lucide-react';
 
 const TABS = [
   { id: 'users', label: 'Usuarios', icon: Users },
@@ -53,6 +53,18 @@ export function SettingsClient() {
   const [editWhId, setEditWhId] = useState('');
   const [editWhName, setEditWhName] = useState('');
   const [editWhAddr, setEditWhAddr] = useState('');
+  // Warehouses — profile (emisor)
+  const [editWhProfileId, setEditWhProfileId] = useState('');
+  const [editWhLegalName, setEditWhLegalName] = useState('');
+  const [editWhDisplayName, setEditWhDisplayName] = useState('');
+  const [editWhCity, setEditWhCity] = useState('');
+  const [editWhState, setEditWhState] = useState('PR');
+  const [editWhZip, setEditWhZip] = useState('');
+  const [editWhPhone, setEditWhPhone] = useState('');
+  const [editWhEmail, setEditWhEmail] = useState('');
+  const [editWhWebsite, setEditWhWebsite] = useState('');
+  const [editWhEin, setEditWhEin] = useState('');
+  const [editWhMerchant, setEditWhMerchant] = useState('');
 
   // Suppliers — create
   const [supName, setSupName] = useState(''); const [supCountry, setSupCountry] = useState('DO');
@@ -143,6 +155,11 @@ export function SettingsClient() {
     onError: (e) => setError(e.message),
   });
 
+  const updateWhProfile = trpc.settings.updateWarehouseProfile.useMutation({
+    onSuccess: () => { refetchWh(); closeModal(); },
+    onError: (e) => setError(e.message),
+  });
+
   const updateSup = trpc.settings.updateSupplier.useMutation({
     onSuccess: () => { refetchSup(); closeModal(); },
     onError: (e) => setError(e.message),
@@ -168,6 +185,10 @@ export function SettingsClient() {
     setEditSupId(''); setEditSupName(''); setEditSupContact(''); setEditSupEmail(''); setEditSupPhone(''); setEditSupTerms('');
     setPlWarehouseId(''); setPlWarehouseName(''); setPlProductId(''); setPlCode(''); setPlQty(0);
     setEditLocId(''); setEditLocCode('');
+    setEditWhProfileId(''); setEditWhLegalName(''); setEditWhDisplayName('');
+    setEditWhCity(''); setEditWhState('PR'); setEditWhZip('');
+    setEditWhPhone(''); setEditWhEmail(''); setEditWhWebsite('');
+    setEditWhEin(''); setEditWhMerchant('');
   }
 
   return (
@@ -370,6 +391,26 @@ export function SettingsClient() {
                           <Pencil size={13} style={{ color: '#2563EB' }} />
                         </button>
                         <button
+                          onClick={() => {
+                            setEditWhProfileId(w.id);
+                            setEditWhLegalName(w.legalName ?? '');
+                            setEditWhDisplayName(w.displayName ?? '');
+                            setEditWhCity(w.city ?? '');
+                            setEditWhState(w.state ?? 'PR');
+                            setEditWhZip(w.zipCode ?? '');
+                            setEditWhPhone(w.phone ?? '');
+                            setEditWhEmail(w.email ?? '');
+                            setEditWhWebsite(w.website ?? '');
+                            setEditWhEin(w.ein ?? '');
+                            setEditWhMerchant(w.merchantRegistration ?? '');
+                            setError('');
+                            setModal('editWarehouseProfile');
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-orange-50"
+                          title="Perfil de emisor (datos para facturas)">
+                          <FileText size={13} style={{ color: brand.orange[500] }} />
+                        </button>
+                        <button
                           onClick={() => { setPlWarehouseId(w.id); setPlWarehouseName(w.name); setModal('location'); }}
                           className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg border hover:bg-slate-50"
                           style={{ color: brand.navy[700] }}>
@@ -569,7 +610,7 @@ export function SettingsClient() {
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30" style={{ backdropFilter: 'blur(4px)' }} onClick={closeModal} />
-          <div className="relative w-full max-w-md mx-4 rounded-2xl p-6"
+          <div className={`relative w-full mx-4 rounded-2xl p-6 ${modal === 'editWarehouseProfile' ? 'max-w-lg' : 'max-w-md'}`}
             style={{ background: 'rgba(255,255,255,0.97)', boxShadow: '0 24px 64px rgba(10,22,40,0.18)' }}>
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-bold" style={{ color: brand.navy[950] }}>
@@ -582,6 +623,7 @@ export function SettingsClient() {
                   : modal === 'location' ? 'Agregar Ubicación'
                   : modal === 'editLocation' ? 'Editar Ubicación'
                   : modal === 'editSupplier' ? 'Editar Proveedor'
+                  : modal === 'editWarehouseProfile' ? `Perfil — ${warehouses?.find((w) => w.id === editWhProfileId)?.name ?? ''}`
                   : 'Nuevo Proveedor'}
               </h2>
               <button onClick={closeModal}><X size={18} style={{ color: '#64748B' }} /></button>
@@ -738,6 +780,52 @@ export function SettingsClient() {
                 <F label="Nombre *"><input value={editWhName} onChange={(e) => setEditWhName(e.target.value)} placeholder="Ej: Ponce" /></F>
                 <F label="Dirección"><input value={editWhAddr} onChange={(e) => setEditWhAddr(e.target.value)} placeholder="Ej: Ponce, Puerto Rico" /></F>
                 <Btns onCancel={closeModal} onConfirm={() => updateWh.mutate({ id: editWhId, data: { name: editWhName, address: editWhAddr || undefined } })} loading={updateWh.isPending} label="Guardar Cambios" />
+              </div>
+            )}
+
+            {modal === 'editWarehouseProfile' && (
+              <div className="space-y-3">
+                <p className="text-xs" style={{ color: '#64748B' }}>
+                  Datos legales y de contacto para facturas. Todos los campos son opcionales.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <F label="Razón Social Legal"><input value={editWhLegalName} onChange={(e) => setEditWhLegalName(e.target.value)} placeholder="The Builder's House LLC" /></F>
+                  <F label="Nombre en Documentos"><input value={editWhDisplayName} onChange={(e) => setEditWhDisplayName(e.target.value)} placeholder="The Builder's House" /></F>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <F label="Ciudad"><input value={editWhCity} onChange={(e) => setEditWhCity(e.target.value)} placeholder="San Juan" /></F>
+                  <F label="Estado / Territorio"><input value={editWhState} onChange={(e) => setEditWhState(e.target.value)} placeholder="PR" /></F>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <F label="Código Postal"><input value={editWhZip} onChange={(e) => setEditWhZip(e.target.value)} placeholder="00901" /></F>
+                  <F label="Teléfono"><input value={editWhPhone} onChange={(e) => setEditWhPhone(e.target.value)} placeholder="(787) 000-0000" /></F>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <F label="Email"><input type="email" value={editWhEmail} onChange={(e) => setEditWhEmail(e.target.value)} placeholder="info@buildershouse.pr" /></F>
+                  <F label="Website"><input value={editWhWebsite} onChange={(e) => setEditWhWebsite(e.target.value)} placeholder="thebuildershouse.pr" /></F>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <F label="EIN (Federal)"><input value={editWhEin} onChange={(e) => setEditWhEin(e.target.value)} placeholder="XX-XXXXXXX" /></F>
+                  <F label="Registro de Comerciante"><input value={editWhMerchant} onChange={(e) => setEditWhMerchant(e.target.value)} placeholder="Número PR" /></F>
+                </div>
+                <Btns
+                  onCancel={closeModal}
+                  onConfirm={() => updateWhProfile.mutate({
+                    id: editWhProfileId,
+                    legalName: editWhLegalName,
+                    displayName: editWhDisplayName,
+                    city: editWhCity,
+                    state: editWhState,
+                    zipCode: editWhZip,
+                    phone: editWhPhone,
+                    email: editWhEmail,
+                    website: editWhWebsite,
+                    ein: editWhEin,
+                    merchantRegistration: editWhMerchant,
+                  })}
+                  loading={updateWhProfile.isPending}
+                  label="Guardar Perfil"
+                />
               </div>
             )}
 
