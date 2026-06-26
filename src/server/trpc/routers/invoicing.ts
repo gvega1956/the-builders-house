@@ -1548,34 +1548,21 @@ export const invoicingRouter = createTRPCRouter({
       });
       if (!invoice) throw new TRPCError({ code: 'NOT_FOUND' });
 
-      const canEdit =
-        invoice.status === 'DRAFT' ||
-        invoice.type === 'QUOTE' ||
-        (invoice.type === 'INVOICE' && invoice.status === 'ISSUED');
-
-      if (!canEdit) {
+      // Solo VOIDED es ineditable
+      if (invoice.status === 'VOIDED') {
         throw new TRPCError({
           code: 'BAD_REQUEST',
-          message: `No se puede editar una factura con estado ${invoice.status}. Use una Nota de Crédito para facturas pagadas.`,
+          message: 'No se puede editar una factura anulada.',
         });
       }
 
-      // ISSUED con pagos → bloquear (ya hay dinero aplicado)
-      const isIssuedInvoice = invoice.type === 'INVOICE' && invoice.status === 'ISSUED';
-      if (isIssuedInvoice) {
-        const paymentCount = await ctx.db.payment.count({ where: { invoiceId: input.id } });
-        if (paymentCount > 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'No se puede editar una factura con pagos registrados. Use una Nota de Crédito.',
-          });
-        }
-        if (!input.editReason?.trim()) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: 'Se requiere el motivo de la edición (editReason) para modificar una factura emitida.',
-          });
-        }
+      // Facturas INVOICE no-DRAFT requieren motivo de edición
+      const isIssuedInvoice = invoice.type === 'INVOICE' && invoice.status !== 'DRAFT';
+      if (isIssuedInvoice && !input.editReason?.trim()) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Se requiere el motivo de la edición para modificar esta factura.',
+        });
       }
 
       const { itemsData, subtotal, taxRateDecimal, taxAmount, total } = calcInvoiceTotals(
@@ -1661,6 +1648,16 @@ export const invoicingRouter = createTRPCRouter({
           });
         }
 
+        // Recalcular estado según paidAmount vs nuevo total
+        let updatedStatus = invoice.status;
+        if (isIssuedInvoice) {
+          const paid = Number(invoice.paidAmount);
+          const newTotal = Number(total);
+          if (paid >= newTotal) updatedStatus = 'PAID';
+          else if (paid > 0) updatedStatus = 'PARTIAL';
+          else updatedStatus = 'ISSUED';
+        }
+
         await tx.invoice.update({
           where: { id: input.id },
           data: {
@@ -1669,6 +1666,7 @@ export const invoicingRouter = createTRPCRouter({
             taxRate: taxRateDecimal,
             taxAmount,
             total,
+            status: updatedStatus,
             dueDate: input.dueDate ?? null,
             notes: input.notes ?? null,
           },

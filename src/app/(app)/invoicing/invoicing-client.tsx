@@ -1343,11 +1343,8 @@ export function InvoicingClient({ role }: { role: string }) {
                             className="p-1.5 rounded-lg hover:bg-slate-100" title="Ver detalle">
                             <Eye size={14} style={{ color: brand.navy[600] }} />
                           </button>
-                          {/* Editar: DRAFT, QUOTE, o ISSUED */}
-                          {(inv.status === 'DRAFT' ||
-                            (inv as unknown as { type: string }).type === 'QUOTE' ||
-                            (inv.status === 'ISSUED' && (inv as unknown as { type: string }).type === 'INVOICE')
-                          ) && (
+                          {/* Editar: todo excepto VOIDED */}
+                          {inv.status !== 'VOIDED' && (
                             <button
                               onClick={() => { setEditInvoiceId(inv.id); setModal('edit'); }}
                               className="p-1.5 rounded-lg hover:bg-blue-50" title="Editar">
@@ -1813,8 +1810,8 @@ export function InvoicingClient({ role }: { role: string }) {
                       style={{ color: brand.navy[900] }} />
                   </div>
 
-                  {/* Motivo de edición — requerido al editar factura ISSUED */}
-                  {modal === 'edit' && editInvoiceData?.status === 'ISSUED' && editInvoiceData?.type === 'INVOICE' && (
+                  {/* Motivo de edición — requerido para facturas INVOICE no-DRAFT */}
+                  {modal === 'edit' && editInvoiceData?.type === 'INVOICE' && editInvoiceData?.status !== 'DRAFT' && (
                     <div className="rounded-xl p-3 border" style={{ background: '#FFFBEB', borderColor: '#FDE68A' }}>
                       <label className="block text-xs font-semibold mb-1.5" style={{ color: '#92400E' }}>
                         Motivo de edición * <span className="font-normal">(factura emitida — requerido)</span>
@@ -1985,19 +1982,13 @@ export function InvoicingClient({ role }: { role: string }) {
             </div>
 
             {/* Detail actions */}
-            {(detail.status === 'ISSUED' || detail.status === 'PARTIAL' || detail.status === 'PENDING_AUTHORIZATION' ||
-              detail.status === 'DRAFT' || (detail as unknown as { type: string }).type === 'QUOTE') && (
+            {detail.status !== 'VOIDED' && (
               <div className="px-6 py-4 border-t border-slate-100 flex gap-2 shrink-0">
-                {(detail.status === 'DRAFT' ||
-                  (detail as unknown as { type: string }).type === 'QUOTE' ||
-                  (detail.status === 'ISSUED' && (detail as unknown as { type: string }).type === 'INVOICE')
-                ) && (
-                  <button onClick={() => { setEditInvoiceId(detail.id); setModal('edit'); }}
-                    className="flex-1 py-2 rounded-xl text-sm font-semibold border hover:bg-blue-50"
-                    style={{ color: '#2563EB', borderColor: '#BFDBFE' }}>
-                    Editar
-                  </button>
-                )}
+                <button onClick={() => { setEditInvoiceId(detail.id); setModal('edit'); }}
+                  className="flex-1 py-2 rounded-xl text-sm font-semibold border hover:bg-blue-50"
+                  style={{ color: '#2563EB', borderColor: '#BFDBFE' }}>
+                  Editar
+                </button>
                 {(detail.status === 'ISSUED' || detail.status === 'PARTIAL') && (
                   <button onClick={() => setModal('payment')}
                     className="flex-1 py-2 rounded-xl text-white text-sm font-semibold hover:opacity-90"
