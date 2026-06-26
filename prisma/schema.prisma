@@ -232,12 +232,22 @@ model Supplier {
 }
 
 model Warehouse {
-  id        String    @id @default(cuid())
-  name      String    @unique
-  address   String?
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @default(now()) @updatedAt
+  id                   String    @id @default(cuid())
+  name                 String    @unique
+  address              String?
+  legalName            String?
+  displayName          String?
+  city                 String?
+  state                String?   @default("PR")
+  zipCode              String?
+  phone                String?
+  email                String?
+  website              String?
+  ein                  String?
+  merchantRegistration String?
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now()) @updatedAt
 
   locations     ProductLocation[]
   transfersFrom Transfer[]         @relation("TransferFrom")
