@@ -483,6 +483,10 @@ export function InvoicingClient({ role }: { role: string }) {
   // Create form
   const [invoiceType, setInvoiceType] = useState<InvoiceType>('INVOICE');
   const [customerId, setCustomerId] = useState('');
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<{
+    id: string; name: string; code: string; type: string;
+  } | null>(null);
   const [branchId, setBranchId] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [applyIvu, setApplyIvu] = useState(true);
@@ -599,7 +603,14 @@ export function InvoicingClient({ role }: { role: string }) {
     { enabled: !!selectedId && modal !== 'create' && modal !== 'none' },
   );
 
-  const { data: customers } = trpc.customers.list.useQuery({ pageSize: 200 });
+  const { data: customers } = trpc.customers.list.useQuery(
+    { pageSize: 200 },
+    { enabled: activeTab === 'ar' },
+  );
+  const { data: customerResults } = trpc.customers.list.useQuery(
+    { search: customerSearch, pageSize: 8 },
+    { enabled: customerSearch.length >= 2 },
+  );
   const { data: products } = trpc.products.list.useQuery({ pageSize: 500 });
   const { data: warehouses } = trpc.settings.warehouses.useQuery();
   const { data: sysConfig } = trpc.settings.getSystemConfig.useQuery();
@@ -655,6 +666,7 @@ export function InvoicingClient({ role }: { role: string }) {
     if (!editInvoiceData || modal !== 'edit') return;
     const inv = editInvoiceData;
     setCustomerId(inv.customerId);
+    setSelectedCustomer({ id: inv.customer.id, name: inv.customer.name, code: inv.customer.code, type: inv.customer.type });
     setInvoiceType(inv.type as InvoiceType);
     setDueDate(inv.dueDate ? new Date(inv.dueDate).toISOString().split('T')[0]! : '');
     setApplyIvu(Number(inv.taxRate) > 0);
@@ -673,14 +685,9 @@ export function InvoicingClient({ role }: { role: string }) {
     );
   }, [editInvoiceData, modal]);
 
-  const selectedCustomer = useMemo(
-    () => customers?.customers.find((c) => c.id === customerId),
-    [customers, customerId],
-  );
-
   function closeModal() {
     setModal('none'); setSelectedId(null); setEditInvoiceId(null); setError('');
-    setInvoiceType('INVOICE'); setCustomerId(''); setBranchId(''); setDueDate('');
+    setInvoiceType('INVOICE'); setCustomerId(''); setCustomerSearch(''); setSelectedCustomer(null); setBranchId(''); setDueDate('');
     setLines([{ productId: '', productName: '', productSku: '', quantity: '1', unitPrice: '0', discountPercent: '0', locationId: '', availableStock: 0 }]);
     setApplyIvu(true); setPaymentMode('CONTADO'); setCreditDays(30);
     setNotes(''); setPayAmount(''); setPayMethod('CASH'); setPayRef('');
@@ -1509,25 +1516,71 @@ export function InvoicingClient({ role }: { role: string }) {
                   {/* Customer */}
                   <div>
                     <label className="block text-xs font-semibold mb-1.5" style={{ color: brand.navy[700] }}>Cliente *</label>
-                    <select value={customerId} onChange={(e) => setCustomerId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none" style={{ color: brand.navy[900] }}>
-                      <option value="">Seleccionar cliente...</option>
-                      {customers?.customers.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                      ))}
-                    </select>
-                    {selectedCustomer && (
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
-                          style={{
-                            background: selectedCustomer.type === 'WHOLESALE' ? '#EFF6FF' : '#F0FDF4',
-                            color: selectedCustomer.type === 'WHOLESALE' ? '#1D4ED8' : '#166534',
-                          }}>
-                          {selectedCustomer.type === 'WHOLESALE' ? 'Mayorista' : 'Detallista'}
-                        </span>
-                        <span className="text-xs text-slate-400">
-                          · Precios {selectedCustomer.type === 'WHOLESALE' ? 'mayorista' : 'retail'} aplicados
-                        </span>
+                    {selectedCustomer ? (
+                      <div>
+                        <div className="flex items-start justify-between px-3 py-2 rounded-xl border border-slate-200"
+                          style={{ backgroundColor: 'rgba(10,22,40,0.015)' }}>
+                          <div>
+                            <div className="text-sm font-semibold" style={{ color: brand.navy[900] }}>{selectedCustomer.name}</div>
+                            <span className="text-xs text-slate-400">{selectedCustomer.code}</span>
+                          </div>
+                          <button
+                            onClick={() => { setCustomerId(''); setSelectedCustomer(null); setCustomerSearch(''); }}
+                            className="text-slate-300 hover:text-slate-500 mt-0.5">
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-1.5">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold"
+                            style={{
+                              background: selectedCustomer.type === 'WHOLESALE' ? '#EFF6FF' : '#F0FDF4',
+                              color: selectedCustomer.type === 'WHOLESALE' ? '#1D4ED8' : '#166534',
+                            }}>
+                            {selectedCustomer.type === 'WHOLESALE' ? 'Mayorista' : 'Detallista'}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            · Precios {selectedCustomer.type === 'WHOLESALE' ? 'mayorista' : 'retail'} aplicados
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <input
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          placeholder="Buscar por nombre, código, teléfono..."
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm outline-none"
+                          style={{ color: brand.navy[900] }}
+                          autoComplete="off"
+                        />
+                        {customerSearch.length >= 2 && customerResults && (
+                          <div className="absolute left-0 right-0 top-full mt-1 rounded-xl shadow-lg z-20 overflow-hidden"
+                            style={{ backgroundColor: 'white', border: '1px solid rgba(10,22,40,0.1)' }}>
+                            {customerResults.customers.length === 0 ? (
+                              <div className="px-3 py-2 text-xs text-slate-400">Sin resultados</div>
+                            ) : (
+                              customerResults.customers.map((c) => (
+                                <button key={c.id}
+                                  onClick={() => {
+                                    setCustomerId(c.id);
+                                    setSelectedCustomer({ id: c.id, name: c.name, code: c.code, type: c.type });
+                                    setCustomerSearch('');
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-sm"
+                                  style={{ borderBottom: '1px solid rgba(10,22,40,0.05)' }}>
+                                  <div className="font-medium" style={{ color: brand.navy[900] }}>{c.name}</div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-400">{c.code}</span>
+                                    {c.type === 'WHOLESALE' && (
+                                      <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                                        style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8' }}>MAYORISTA</span>
+                                    )}
+                                  </div>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
