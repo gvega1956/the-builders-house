@@ -711,23 +711,6 @@ export const invoicingRouter = createTRPCRouter({
           message: 'Esta cotización ya fue convertida a factura. El pago debe aplicarse a la factura derivada.',
         });
 
-      // Verificar límite de crédito cuando el método es CREDIT
-      if (input.method === 'CREDIT') {
-        const customer = await ctx.db.customer.findUnique({
-          where: { id: invoice.customerId },
-          select: { creditLimit: true, currentBalance: true, name: true },
-        });
-        if (customer && customer.creditLimit && customer.creditLimit.gt(0)) {
-          const newBalance = customer.currentBalance.add(toDecimal(input.amount));
-          if (newBalance.gt(customer.creditLimit)) {
-            throw new TRPCError({
-              code: 'BAD_REQUEST',
-              message: `Pago en crédito excede el límite de crédito del cliente ${customer.name}. Límite: $${customer.creditLimit}, Balance actual: $${customer.currentBalance}, Pago solicitado: $${input.amount}`,
-            });
-          }
-        }
-      }
-
       const balanceDue = invoice.total.sub(invoice.paidAmount);
       if (toDecimal(input.amount).gt(balanceDue)) {
         throw new TRPCError({

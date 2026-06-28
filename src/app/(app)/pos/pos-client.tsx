@@ -136,14 +136,19 @@ export function PosClient() {
         })),
       });
 
-      await payMutation.mutateAsync({
-        invoiceId: invoice.id,
-        amount: total,
-        method: paymentMethod,
-        reference: paymentRef || undefined,
-      });
+      if (paymentMethod !== 'CREDIT') {
+        await payMutation.mutateAsync({
+          invoiceId: invoice.id,
+          amount: total,
+          method: paymentMethod,
+          reference: paymentRef || undefined,
+        });
+      }
 
-      setSuccess(`Factura ${invoice.invoiceNumber} emitida y pagada`);
+      const successMsg = paymentMethod === 'CREDIT'
+        ? `Factura ${invoice.invoiceNumber} emitida a crédito — pendiente de cobro en CXC`
+        : `Factura ${invoice.invoiceNumber} emitida y pagada`;
+      setSuccess(successMsg);
       setCart([]);
       setCustomerId('');
       setCustomerSearch('');
