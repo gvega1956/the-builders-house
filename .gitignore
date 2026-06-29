@@ -70,3 +70,6 @@ seed-ponce.mjs.bak
 prod-backup.sql
 .vite-cache/
 .tmp/
+
+# Scripts de diagnóstico archivados (no necesarios en producción)
+_archive/

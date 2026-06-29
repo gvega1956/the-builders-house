@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mockup — Factura The Builder's House</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif;
+      background: #e8e8e8;
+      padding: 40px 20px;
+      color: #0A1628;
+    }
+
+    /* ── Nota de diseño (solo pantalla, no imprime) ── */
+    .design-note {
+      max-width: 8.5in;
+      margin: 0 auto 20px;
+      padding: 12px 16px;
+      background: #1A2D4F;
+      color: #fff;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .design-note strong { color: #EC6326; }
+
+    /* ── Hoja de factura ── */
+    .invoice {
+      max-width: 8.5in;
+      min-height: 11in;
+      margin: 0 auto;
+      background: #ffffff;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.18);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ═══════════════════════════════════════════════
+       ENCABEZADO — fondo blanco, todo el contenido
+       ═══════════════════════════════════════════════ */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 30px 44px 22px;
+    }
+
+    /* Brand (logo + nombre + datos emisor) */
+    .brand-block { display: flex; align-items: flex-start; gap: 14px; }
+
+    .brand-text { display: flex; flex-direction: column; gap: 2px; padding-top: 2px; }
+    .brand-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0A1628;
+      letter-spacing: -0.2px;
+      line-height: 1.1;
+    }
+    .brand-sub {
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0.24em;
+      color: #EC6326;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+    .brand-address {
+      margin-top: 8px;
+      font-size: 9px;
+      color: #64748B;
+      line-height: 1.7;
+    }
+
+    /* Documento (tipo + número + fecha) */
+    .doc-block { text-align: right; }
+    .doc-type {
+      font-size: 26px;
+      font-weight: 800;
+      color: #0A1628;
+      letter-spacing: -0.5px;
+      line-height: 1;
+    }
+    .doc-num {
+      font-size: 13px;
+      font-weight: 600;
+      color: #3D5580;
+      font-family: 'Courier New', monospace;
+      margin-top: 6px;
+    }
+    .doc-date {
+      font-size: 10px;
+      color: #94A3B8;
+      margin-top: 3px;
+    }
+
+    /* ── Línea de acento naranja (ÚNICA banda de color) ── */
+    .accent-line {
+      height: 2.5px;
+      background: #EC6326;
+    }
+
+    /* ═══════════════════════════════════════════════
+       CUERPO
+       ═══════════════════════════════════════════════ */
+    .body { padding: 26px 44px 28px; flex: 1; }
+
+    /* ── Bloque de partes: emisor / cliente / estado ── */
+    .parties {
+      display: grid;
+      grid-template-columns: 1fr 1px 1fr 160px;
+      gap: 0;
+      margin-bottom: 24px;
+      align-items: start;
+    }
+    .party { padding-right: 24px; }
+    .party-right { padding-left: 24px; padding-right: 0; }
+    .party-divider { background: #E2E8F0; align-self: stretch; }
+    .party-status { text-align: right; }
+
+    .party-label {
+      font-size: 7.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #94A3B8;
+      margin-bottom: 5px;
+    }
+    .party-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0A1628;
+      line-height: 1.3;
+    }
+    .party-detail {
+      font-size: 9.5px;
+      color: #64748B;
+      margin-top: 3px;
+      line-height: 1.6;
+    }
+
+    /* Badge de estado — solo borde, sin fondo */
+    .status-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 100px;
+      border: 1.5px solid;
+    }
+    .status-issued  { color: #0284C7; border-color: #0284C7; }
+    .status-paid    { color: #16A34A; border-color: #16A34A; }
+    .status-partial { color: #D97706; border-color: #D97706; }
+    .status-pending { color: #D97706; border-color: #D97706; }
+
+    .due-block { margin-top: 14px; }
+
+    /* ── Tabla de ítems ── */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 2px;
+    }
+
+    /* Encabezado: solo línea naranja inferior + texto naranja — SIN fondo */
+    .items-table thead tr {
+      border-bottom: 1.5px solid #EC6326;
+    }
+    .items-table thead th {
+      padding: 7px 6px;
+      font-size: 7.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #EC6326;
+      text-align: left;
+    }
+    .items-table thead th.right { text-align: right; }
+
+    /* Filas: alternado muy sutil, sin color */
+    .items-table tbody tr td {
+      padding: 7px 6px;
+      font-size: 9px;
+      color: #0A1628;
+      border-bottom: 1px solid #F1F5F9;
+      vertical-align: top;
+    }
+    .items-table tbody tr:nth-child(even) td {
+      background: #F8FAFC; /* slate-50, casi blanco */
+    }
+
+    .td-right  { text-align: right; }
+    .td-muted  { color: #94A3B8; }
+    .td-bold   { font-weight: 700; }
+    .td-mono   { font-family: 'Courier New', monospace; font-size: 8px; color: #64748B; }
+    .td-product-name { font-weight: 500; }
+    .td-product-sub  { font-size: 8px; color: #94A3B8; margin-top: 1px; }
+
+    /* ── Bloque de totales ── */
+    .totals-outer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+    .totals-block { width: 250px; }
+
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: 3.5px 0;
+    }
+    .total-lbl { font-size: 10px; color: #64748B; }
+    .total-val { font-size: 10px; color: #0A1628; font-variant-numeric: tabular-nums; }
+
+    /* Línea naranja antes del TOTAL — el único acento de color en los totales */
+    .total-accent { height: 1.5px; background: #EC6326; margin: 9px 0; }
+
+    .grand-lbl { font-size: 15px; font-weight: 800; color: #0A1628; }
+    .grand-val { font-size: 15px; font-weight: 800; color: #EC6326; }
+
+    .total-paid-lbl { color: #16A34A; font-weight: 600; }
+    .total-paid-val { color: #16A34A; font-weight: 700; }
+    .total-bal-lbl  { color: #DC2626; font-weight: 700; }
+    .total-bal-val  { color: #DC2626; font-weight: 700; }
+
+    /* ── Notas ── */
+    .notes-box {
+      margin-top: 22px;
+      padding: 10px 14px;
+      border-left: 3px solid #EC6326;
+      background: #FEF3EC;  /* orange-50 */
+    }
+    .notes-label {
+      font-size: 7.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #94A3B8;
+      margin-bottom: 4px;
+    }
+    .notes-text { font-size: 9.5px; color: #334155; line-height: 1.5; }
+
+    /* ── NCF / términos ── */
+    .footer-info {
+      margin-top: 20px;
+      display: flex;
+      gap: 40px;
+    }
+    .footer-info-block { }
+    .footer-info-label {
+      font-size: 7.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #94A3B8;
+      margin-bottom: 3px;
+    }
+    .footer-info-value { font-size: 9.5px; color: #334155; }
+
+    /* ═══════════════════════════════════════════════
+       PIE DE PÁGINA
+       ═══════════════════════════════════════════════ */
+    .footer {
+      margin-top: auto;
+    }
+    .footer-line { height: 2.5px; background: #EC6326; }
+    .footer-text {
+      font-size: 7.5px;
+      color: #94A3B8;
+      text-align: center;
+      padding: 7px 44px 14px;
+      letter-spacing: 0.04em;
+    }
+
+    /* ═══════════════════════════════════════════════
+       PRINT — garantiza papel carta, sin fondos de color
+       ═══════════════════════════════════════════════ */
+    @media print {
+      body { background: white; padding: 0; }
+      .invoice { box-shadow: none; max-width: 100%; min-height: 0; }
+      .design-note { display: none; }
+      /* Forzar fondos claros — el naranja-50 de notas es #FEF3EC,
+         muy claro, pero lo preservamos porque apenas usa tinta */
+      @page {
+        margin: 1.2cm 1cm;
+        size: letter portrait;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nota visible solo en pantalla -->
+  <div class="design-note">
+    <strong>MOCKUP — NO tocar la factura real.</strong>
+    Principios aplicados: fondo blanco total · naranja solo en líneas finas (2.5px header, thead border, línea del total, pie) ·
+    logo SVG idéntico al sidebar (icon 44px, fondo navy solo en el ícono pequeño) ·
+    texto todo en navy/slate sobre blanco · filas alternadas en slate-50 (casi blanco) ·
+    badge de estado: solo borde, sin fondo · grand total sin caja oscura.
+    <br>Áreas de color de la versión anterior <strong>eliminadas</strong>:
+    banda header navy950 (80px alto) · caja grand total navy950 · thead navy800.
+  </div>
+
+  <!-- ═════════════════════ FACTURA ═════════════════════ -->
+  <div class="invoice">
+
+    <!-- ENCABEZADO -->
+    <div class="header">
+      <!-- Brand: logo + nombre + datos emisor -->
+      <div class="brand-block">
+        <!-- Logo SVG — MISMO que src/components/brand/logo.tsx (theme=dark, size=sm) -->
+        <svg width="44" height="44" viewBox="0 0 64 64" fill="none" aria-label="The Builder's House">
+          <rect width="64" height="64" rx="12" fill="#0A1628"/>
+          <!-- Puerta -->
+          <rect x="12" y="14" width="16" height="38" rx="1.5" fill="#EC6326"/>
+          <circle cx="24.5" cy="33" r="1.2" fill="#0A1628"/>
+          <!-- Ventana superior 4 paneles -->
+          <rect x="32" y="14" width="20" height="20" rx="1.5" stroke="#EC6326" stroke-width="2.5" fill="none"/>
+          <line x1="42" y1="14" x2="42" y2="34" stroke="#EC6326" stroke-width="2.5"/>
+          <line x1="32" y1="24" x2="52" y2="24" stroke="#EC6326" stroke-width="2.5"/>
+          <!-- Ventana inferior -->
+          <rect x="32" y="36" width="20" height="16" rx="1.5" stroke="#EC6326" stroke-width="2.5" fill="none"/>
+          <line x1="42" y1="36" x2="42" y2="52" stroke="#EC6326" stroke-width="2.5"/>
+        </svg>
+        <div class="brand-text">
+          <div class="brand-name">THE BUILDER'S HOUSE</div>
+          <div class="brand-sub">Puerto Rico</div>
+          <!-- Datos del emisor (pendiente añadir a sysConfig) -->
+          <div class="brand-address">
+            123 Ave. Fernández Juncos, San Juan, PR 00901<br>
+            Tel: (787) 555-0100 &nbsp;·&nbsp; EIN: 66-XXXXXXX<br>
+            thebuildershouse.pr
+          </div>
+        </div>
+      </div>
+
+      <!-- Documento -->
+      <div class="doc-block">
+        <div class="doc-type">FACTURA</div>
+        <div class="doc-num">FAC-00173</div>
+        <div class="doc-date">25 de junio de 2026</div>
+      </div>
+    </div>
+
+    <!-- Línea de acento naranja -->
+    <div class="accent-line"></div>
+
+    <!-- CUERPO -->
+    <div class="body">
+
+      <!-- Partes: cliente + estado -->
+      <div class="parties">
+        <!-- Facturar a -->
+        <div class="party">
+          <div class="party-label">Facturar a</div>
+          <div class="party-name">Constructora Ponce LLC</div>
+          <div class="party-detail">
+            CLI-0042<br>
+            456 Ave. Las Américas, Ponce, PR 00717<br>
+            Tel: (787) 555-0200
+          </div>
+        </div>
+
+        <!-- Divisor vertical -->
+        <div class="party-divider"></div>
+
+        <!-- Entregar en (opcional) -->
+        <div class="party party-right">
+          <div class="party-label">Entrega / Proyecto</div>
+          <div class="party-name" style="font-size:12px;">Edificio Las Torres — Unidad 3</div>
+          <div class="party-detail">
+            789 Calle Marina, Ponce, PR 00716
+          </div>
+        </div>
+
+        <!-- Estado + Vencimiento -->
+        <div class="party-status">
+          <div class="party-label">Estado</div>
+          <span class="status-badge status-issued">Emitida</span>
+          <div class="due-block">
+            <div class="party-label">Vencimiento</div>
+            <div class="party-detail" style="color:#0A1628; font-weight:600;">25 de julio de 2026</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TABLA DE ÍTEMS -->
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th style="width:36%">Descripción / Producto</th>
+            <th style="width:13%">SKU</th>
+            <th class="right" style="width:8%">Cant.</th>
+            <th class="right" style="width:14%">Precio Unit.</th>
+            <th class="right" style="width:9%">Desc.</th>
+            <th class="right" style="width:12%">Total Línea</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              <div class="td-product-name">Ventana Corrediza 36×48 AE</div>
+              <div class="td-product-sub">Lama 3" · Acid Etched</div>
+            </td>
+            <td class="td-mono">VC-3648-AE</td>
+            <td class="td-right">4</td>
+            <td class="td-right">$450.00</td>
+            <td class="td-right td-muted">—</td>
+            <td class="td-right td-bold">$1,800.00</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-product-name">Puerta Entrada Sólida 36"</div>
+              <div class="td-product-sub">Madera sólida · marco incluido</div>
+            </td>
+            <td class="td-mono">PE-S36</td>
+            <td class="td-right">2</td>
+            <td class="td-right">$875.00</td>
+            <td class="td-right" style="color:#D97706;">10%</td>
+            <td class="td-right td-bold">$1,575.00</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-product-name">Ventana Fija 24×36 BG</div>
+              <div class="td-product-sub">Lama 4" · Bronze/Grey</div>
+            </td>
+            <td class="td-mono">VF-2436-BG</td>
+            <td class="td-right">6</td>
+            <td class="td-right">$320.00</td>
+            <td class="td-right td-muted">—</td>
+            <td class="td-right td-bold">$1,920.00</td>
+          </tr>
+          <tr>
+            <td>
+              <div class="td-product-name">Instalación y sellado profesional</div>
+              <div class="td-product-sub">Incluye silicón estructural</div>
+            </td>
+            <td class="td-mono">SVC-INST</td>
+            <td class="td-right">1</td>
+            <td class="td-right">$350.00</td>
+            <td class="td-right td-muted">—</td>
+            <td class="td-right td-bold">$350.00</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- TOTALES -->
+      <div class="totals-outer">
+        <div class="totals-block">
+          <div class="total-row">
+            <span class="total-lbl">Subtotal</span>
+            <span class="total-val">$5,645.00</span>
+          </div>
+          <div class="total-row">
+            <span class="total-lbl">IVU (11.5%)</span>
+            <span class="total-val">$649.18</span>
+          </div>
+          <!-- Línea naranja fina — único acento de color en totales -->
+          <div class="total-accent"></div>
+          <div class="total-row">
+            <span class="total-lbl grand-lbl">TOTAL</span>
+            <span class="total-val grand-val">$6,294.18</span>
+          </div>
+          <div class="total-row" style="margin-top:6px;">
+            <span class="total-lbl total-paid-lbl">Pagado</span>
+            <span class="total-val total-paid-val">$2,000.00</span>
+          </div>
+          <div class="total-row">
+            <span class="total-lbl total-bal-lbl">Balance Pendiente</span>
+            <span class="total-val total-bal-val">$4,294.18</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- NOTAS -->
+      <div class="notes-box">
+        <div class="notes-label">Notas</div>
+        <div class="notes-text">
+          Pago neto a 30 días. Cheques a nombre de The Builder's House LLC.<br>
+          Garantía de instalación: 1 año contra defectos de mano de obra.
+        </div>
+      </div>
+
+      <!-- NCF + TÉRMINOS -->
+      <div class="footer-info">
+        <div class="footer-info-block">
+          <div class="footer-info-label">Términos de Pago</div>
+          <div class="footer-info-value">Neto 30 días · Vence 25 jul 2026</div>
+        </div>
+        <div class="footer-info-block">
+          <div class="footer-info-label">NCF (si aplica)</div>
+          <div class="footer-info-value" style="font-family:'Courier New',monospace; font-size:10px;">B01 00000173</div>
+        </div>
+        <div class="footer-info-block">
+          <div class="footer-info-label">Método de Pago Preferido</div>
+          <div class="footer-info-value">Cheque · ACH · Efectivo</div>
+        </div>
+      </div>
+
+    </div><!-- /body -->
+
+    <!-- PIE -->
+    <div class="footer">
+      <div class="footer-line"></div>
+      <div class="footer-text">
+        The Builder's House · Puerto Rico · thebuildershouse.pr &nbsp;·&nbsp; FAC-00173 &nbsp;·&nbsp; Generado el 25/06/2026
+      </div>
+    </div>
+
+  </div><!-- /invoice -->
+
+</body>
+</html>
