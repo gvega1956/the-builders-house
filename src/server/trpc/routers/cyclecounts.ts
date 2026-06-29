@@ -155,29 +155,41 @@ export const cycleCountsRouter = createTRPCRouter({
         });
       }
 
-      // variance = physical count - system snapshot taken at assign time
-      const variance = input.countedQuantity - count.systemQuantity;
+      // snapshotVariance: señal de anomalía vs. lo que el sistema esperaba al asignar
+      const snapshotVariance = input.countedQuantity - count.systemQuantity;
 
       return ctx.db.$transaction(async (tx) => {
+        // Lock del stock actual: previene race conditions y permite calcular varianza real
+        const [loc] = await tx.$queryRaw<Array<{ quantityOnHand: unknown }>>`
+          SELECT "quantityOnHand" FROM product_locations
+          WHERE id = ${count.locationId!}
+          FOR UPDATE
+        `;
+        if (!loc) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Ubicación no encontrada en transacción' });
+
+        // actualVariance: delta real entre conteo físico y stock actual
+        // Nunca produce stock < 0 porque countedQuantity >= 0 (Zod min(0))
+        const actualVariance = input.countedQuantity - Number(loc.quantityOnHand);
+
         const updated = await tx.cycleCount.update({
           where: { id: input.id },
           data: {
             countedQuantity: input.countedQuantity,
-            variance,
+            variance: snapshotVariance,
             completedAt: new Date(),
             notes: input.notes,
             photoUrl: input.photoUrl,
           },
         });
 
-        if (variance !== 0) {
+        if (actualVariance !== 0) {
           // F-1/F-2: adjustment always goes to the location set at assign time
           await tx.inventoryMovement.create({
             data: {
               productId: count.productId,
               locationId: count.locationId!,
               movementType: 'ADJUSTMENT',
-              quantity: variance,
+              quantity: actualVariance,
               referenceType: 'CYCLE_COUNT',
               referenceId: count.id,
               userId: ctx.session!.user!.id!,
@@ -186,9 +198,10 @@ export const cycleCountsRouter = createTRPCRouter({
             },
           });
 
+          // Set directo al conteo físico — el conteo es autoritativo
           await tx.productLocation.update({
             where: { id: count.locationId! },
-            data: { quantityOnHand: { increment: variance } },
+            data: { quantityOnHand: input.countedQuantity },
           });
         }
 
@@ -202,9 +215,11 @@ export const cycleCountsRouter = createTRPCRouter({
               productSku: count.product.sku,
               locationId: count.locationId,
               systemQuantity: count.systemQuantity,
+              currentQuantityOnHand: Number(loc.quantityOnHand),
               countedQuantity: input.countedQuantity,
-              variance,
-              adjustmentCreated: variance !== 0,
+              snapshotVariance,
+              actualVariance,
+              adjustmentCreated: actualVariance !== 0,
             } as Prisma.InputJsonValue,
           },
         });
