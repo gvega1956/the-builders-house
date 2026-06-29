@@ -1574,6 +1574,14 @@ export const invoicingRouter = createTRPCRouter({
         input.taxRate,
       );
 
+      // Guard: no se puede bajar el total por debajo de lo ya cobrado
+      if (isIssuedInvoice && Number(total) < Number(invoice.paidAmount)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `No se puede bajar el total a $${Number(total).toFixed(2)} porque el cliente ya pagó $${Number(invoice.paidAmount).toFixed(2)}. Para devolver dinero, emite una Nota de Crédito.`,
+        });
+      }
+
       await ctx.db.$transaction(async (tx) => {
         // Para ISSUED: revertir movimientos de inventario anteriores
         if (isIssuedInvoice) {
