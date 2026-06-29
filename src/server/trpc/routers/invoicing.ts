@@ -575,6 +575,27 @@ export const invoicingRouter = createTRPCRouter({
           });
         }
 
+        // 5. Verificar límite de crédito (solo CREDITO con límite > 0)
+        if (rest.paymentTerms === 'CREDITO') {
+          const [cust] = await tx.$queryRaw<
+            Array<{ currentBalance: unknown; creditLimit: unknown }>
+          >`
+            SELECT "currentBalance", "creditLimit"
+            FROM customers
+            WHERE id = ${input.customerId}
+            FOR UPDATE
+          `;
+          if (cust && Number(cust.creditLimit) > 0) {
+            const projected = Number(cust.currentBalance) + Number(total);
+            if (projected > Number(cust.creditLimit)) {
+              throw new TRPCError({
+                code: 'BAD_REQUEST',
+                message: `Límite de crédito excedido para ${customer.name}. Límite: $${Number(cust.creditLimit).toFixed(2)}, Balance actual: $${Number(cust.currentBalance).toFixed(2)}, Esta venta: $${Number(total).toFixed(2)}, Excedería en: $${(projected - Number(cust.creditLimit)).toFixed(2)}.`,
+              });
+            }
+          }
+        }
+
         await tx.customer.update({
           where: { id: input.customerId },
           data: { currentBalance: { increment: total } },
