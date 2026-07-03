@@ -520,6 +520,8 @@ export function InvoicingClient({ role }: { role: string }) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [printMode, setPrintMode] = useState(false);
+  const [printingBranch, setPrintingBranch] = useState(false);
+  const [showBranchPrintMenu, setShowBranchPrintMenu] = useState(false);
 
   const { queryFrom, queryTo } = useMemo(() => {
     const now = new Date();
@@ -563,6 +565,8 @@ export function InvoicingClient({ role }: { role: string }) {
     return 'Todos los períodos';
   }, [dateMode, dateFrom, dateTo]);
 
+  const utils = trpc.useUtils();
+
   // Queries
   const { data, isLoading, isFetching, refetch } = trpc.invoicing.list.useQuery({
     search: search || undefined,
@@ -596,6 +600,116 @@ export function InvoicingClient({ role }: { role: string }) {
     fetchingForPrint.current = false;
     setPage(1);
     setPrintMode(true);
+  }
+
+  async function printSalesByBranch(targetBranchId?: string) {
+    setShowBranchPrintMenu(false);
+    setPrintingBranch(true);
+    try {
+      const rawData = await utils.invoicing.salesByBranch.fetch(
+        queryFrom || queryTo ? { from: queryFrom, to: queryTo } : undefined
+      );
+
+      const branches = targetBranchId
+        ? rawData.filter(b => b.branchId === targetBranchId)
+        : rawData;
+
+      const date = new Date().toLocaleDateString('es-PR', { year: 'numeric', month: 'long', day: 'numeric' });
+      const periodStr = periodLabel !== 'Todos los períodos' ? periodLabel : 'Período completo';
+      const titleBranch = targetBranchId ? (branches[0]?.branchName ?? 'Sucursal') : 'Todas las Sucursales';
+
+      const STATUS_ES: Record<string, string> = {
+        PAID: 'Pagada', PARTIAL: 'Parcial', ISSUED: 'Emitida',
+      };
+
+      let grandTotal = 0;
+      let grandCount = 0;
+
+      const sections = branches.map(b => {
+        grandTotal += b.totals.total;
+        grandCount += b.totals.invoiceCount;
+
+        const rows = b.invoices.map((inv, i) => {
+          const balance = inv.total - inv.paidAmount;
+          return `<tr style="${i % 2 !== 0 ? 'background:#f8fafc' : ''}">
+            <td class="num mono">${inv.invoiceNumber}</td>
+            <td>${inv.customerName}<br><span class="muted">${inv.customerCode}</span></td>
+            <td class="center">${new Date(inv.createdAt).toLocaleDateString('es-PR', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+            <td class="num">${inv.itemCount}</td>
+            <td class="num">$${inv.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            <td class="num">$${inv.taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            <td class="num bold">$${inv.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            <td class="num" style="color:#16A34A">$${inv.paidAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            <td class="num${balance > 0.005 ? ' red' : ' muted'}">$${balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+            <td><span class="badge badge-${inv.status}">${STATUS_ES[inv.status] ?? inv.status}</span></td>
+          </tr>`;
+        }).join('');
+
+        return `<tr class="wh-hdr"><td colspan="10">
+          ${b.branchName}
+          &nbsp;·&nbsp; ${b.totals.invoiceCount} factura${b.totals.invoiceCount !== 1 ? 's' : ''}
+          &nbsp;·&nbsp; $${b.totals.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+        </td></tr>${rows}`;
+      }).join('');
+
+      const html = `<!DOCTYPE html><html><head>
+        <meta charset="utf-8">
+        <title>Ventas por Sucursal — ${titleBranch}</title>
+        <style>
+          *{margin:0;padding:0;box-sizing:border-box}
+          body{font-family:Arial,sans-serif;font-size:10px;color:#1e293b;padding:16px 20px}
+          .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0A1628;padding-bottom:10px;margin-bottom:12px}
+          .hdr h1{font-size:16px;font-weight:700;color:#0A1628;letter-spacing:-0.5px}
+          .hdr .sub{font-size:9px;color:#64748B;margin-top:3px}
+          .hdr .right{text-align:right;font-size:9px;color:#64748B}
+          table{width:100%;border-collapse:collapse}
+          th{background:#0A1628;color:#fff;padding:5px 7px;text-align:left;font-size:8.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+          th.num,td.num{text-align:right}
+          th.center,td.center{text-align:center}
+          td{padding:4px 7px;border-bottom:1px solid #e2e8f0;vertical-align:middle;font-size:9.5px}
+          tr.wh-hdr td{background:#EC6326!important;color:#fff;font-weight:700;font-size:10px;padding:6px 8px}
+          .mono{font-family:monospace;font-size:9px;color:#475569}
+          .muted{color:#94A3B8;font-size:8.5px}
+          .bold{font-weight:700}
+          .red{color:#991B1B;font-weight:700}
+          .badge{padding:1px 6px;border-radius:20px;font-size:8px;font-weight:600}
+          .badge-PAID{background:#F0FDF4;color:#166534}
+          .badge-PARTIAL{background:#FEF9C3;color:#854D0E}
+          .badge-ISSUED{background:#EFF6FF;color:#1D4ED8}
+          .totals{margin-top:14px;padding:10px 14px;background:#f1f5f9;border-radius:6px;display:flex;gap:24px;align-items:center}
+          .totals .item{font-size:9px;color:#64748B}
+          .totals .val{font-size:14px;font-weight:700;color:#0A1628;display:block}
+          .totals .label{font-size:8.5px;color:#94A3B8}
+          @media print{body{padding:10px 12px}th,.wh-hdr td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+        </style>
+      </head><body>
+        <div class="hdr">
+          <div>
+            <h1>THE BUILDER'S HOUSE · Puerto Rico</h1>
+            <div class="sub">Ventas por Sucursal · ${titleBranch} · ${periodStr}</div>
+          </div>
+          <div class="right">Generado: ${date}<br>${grandCount} factura${grandCount !== 1 ? 's' : ''}</div>
+        </div>
+        <table>
+          <thead><tr>
+            <th class="num"># Factura</th><th>Cliente</th><th class="center">Fecha</th>
+            <th class="num">Items</th><th class="num">Subtotal</th><th class="num">IVU</th>
+            <th class="num">Total</th><th class="num">Pagado</th><th class="num">Balance</th><th>Estado</th>
+          </tr></thead>
+          <tbody>${sections}</tbody>
+        </table>
+        <div class="totals">
+          <div class="item"><span class="val">${grandCount}</span><span class="label">Facturas</span></div>
+          <div class="item" style="margin-left:auto"><span class="val">$${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span><span class="label">Total Vendido</span></div>
+        </div>
+        <script>window.onload=()=>window.print()<\/script>
+      </body></html>`;
+
+      const win = window.open('', '_blank', 'width=1200,height=700');
+      if (win) { win.document.write(html); win.document.close(); }
+    } finally {
+      setPrintingBranch(false);
+    }
   }
 
   const { data: detail, refetch: refetchDetail } = trpc.invoicing.byId.useQuery(
@@ -1249,6 +1363,52 @@ export function InvoicingClient({ role }: { role: string }) {
             {totalCount} doc · {formatCurrency(serverTotals.total)}
           </span>
         )}
+
+        {/* Ventas por sucursal — print button */}
+        <div className="relative">
+          <button
+            onClick={() => setShowBranchPrintMenu(m => !m)}
+            disabled={printingBranch}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border hover:bg-slate-50 transition-all disabled:opacity-60"
+            style={{ color: brand.navy[800], borderColor: '#E2E8F0', backgroundColor: 'white' }}
+          >
+            <Building2 size={13} />
+            {printingBranch ? 'Generando…' : 'x Sucursal'}
+          </button>
+          {showBranchPrintMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowBranchPrintMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl w-56 overflow-hidden">
+                <div className="px-3 py-2 text-xs font-semibold text-slate-400 border-b border-slate-100 uppercase tracking-wide">
+                  Ventas por Sucursal
+                </div>
+                <div className="px-3 py-1.5 text-[10px] text-slate-400 border-b border-slate-50" style={{ fontStyle: 'italic' }}>
+                  Período: {periodLabel}
+                </div>
+                <button
+                  onClick={() => void printSalesByBranch()}
+                  className="w-full flex items-center gap-2 px-4 py-2.5 text-xs hover:bg-slate-50 text-left font-medium"
+                  style={{ color: brand.navy[950] }}>
+                  <Printer size={12} style={{ color: brand.orange[500] }} />
+                  Todas las Sucursales
+                </button>
+                {(warehouses ?? []).filter(w => w.isActive).length > 0 && (
+                  <>
+                    <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100">Por sucursal</div>
+                    {(warehouses ?? []).filter(w => w.isActive).map(wh => (
+                      <button key={wh.id}
+                        onClick={() => void printSalesByBranch(wh.id)}
+                        className="w-full px-4 py-2 text-xs hover:bg-slate-50 text-left"
+                        style={{ color: brand.navy[800] }}>
+                        {wh.name}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Print button */}
         <button onClick={handlePrint} disabled={printMode}

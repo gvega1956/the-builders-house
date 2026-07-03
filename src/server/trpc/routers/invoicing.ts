@@ -1802,4 +1802,85 @@ export const invoicingRouter = createTRPCRouter({
 
     return Object.values(map).sort((a, b) => b.total - a.total);
   }),
+
+  /**
+   * Ventas del período agrupadas por sucursal — para reporte impreso.
+   * Devuelve cada sucursal con su lista de facturas y subtotales.
+   * Facturas sin branchId van en el grupo "Sin Sucursal Asignada".
+   */
+  salesByBranch: protectedProcedure
+    .input(
+      z.object({
+        from: z.date().optional(),
+        to:   z.date().optional(),
+      }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const invoices = await ctx.db.invoice.findMany({
+        where: {
+          type:   'INVOICE',
+          status: { in: ['PAID', 'PARTIAL', 'ISSUED'] },
+          ...(input?.from || input?.to
+            ? { createdAt: { ...(input.from && { gte: input.from }), ...(input.to && { lte: input.to }) } }
+            : {}),
+        },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          createdAt: true,
+          status: true,
+          subtotal: true,
+          taxAmount: true,
+          total: true,
+          paidAmount: true,
+          branchId: true,
+          branch:   { select: { name: true } },
+          customer: { select: { name: true, code: true } },
+          _count:   { select: { items: true } },
+        },
+        orderBy: [{ branchId: 'asc' }, { createdAt: 'desc' }],
+      });
+
+      // Group by branch
+      const branchMap = new Map<string, {
+        branchId: string | null;
+        branchName: string;
+        invoices: typeof invoices;
+      }>();
+
+      for (const inv of invoices) {
+        const key = inv.branchId ?? '__none__';
+        if (!branchMap.has(key)) {
+          branchMap.set(key, {
+            branchId:   inv.branchId,
+            branchName: inv.branch?.name ?? 'Sin Sucursal Asignada',
+            invoices:   [],
+          });
+        }
+        branchMap.get(key)!.invoices.push(inv);
+      }
+
+      return Array.from(branchMap.values()).map((b) => ({
+        branchId:   b.branchId,
+        branchName: b.branchName,
+        invoices:   b.invoices.map((i) => ({
+          id:            i.id,
+          invoiceNumber: i.invoiceNumber,
+          createdAt:     i.createdAt,
+          status:        i.status,
+          subtotal:      Number(i.subtotal),
+          taxAmount:     Number(i.taxAmount),
+          total:         Number(i.total),
+          paidAmount:    Number(i.paidAmount),
+          customerName:  i.customer.name,
+          customerCode:  i.customer.code,
+          itemCount:     i._count.items,
+        })),
+        totals: {
+          invoiceCount: b.invoices.length,
+          total:        b.invoices.reduce((s, i) => s + Number(i.total), 0),
+          paid:         b.invoices.reduce((s, i) => s + Number(i.paidAmount), 0),
+        },
+      }));
+    }),
 });
