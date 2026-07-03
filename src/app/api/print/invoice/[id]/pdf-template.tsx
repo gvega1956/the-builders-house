@@ -46,18 +46,25 @@ const STATUS_COLOR: Record<string, string> = {
 const s = StyleSheet.create({
   page: { fontFamily: 'Helvetica', fontSize: 9, color: C.navy950, backgroundColor: C.white },
 
-  // ── Header ──────────────────────────────────────────────────
-  header: { backgroundColor: C.navy950, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '22 40 22 40' },
+  // ── Header — blanco, acento naranja solo en texto y borde ────
+  header: {
+    backgroundColor: C.white,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20 40 16 40',
+    borderBottom: `1 solid ${C.slate200}`,
+  },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
   brandText: { marginLeft: 12 },
-  brandName: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.white },
+  brandName: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.navy950 },
   brandSub: { fontSize: 7, color: C.orange500, marginTop: 3 },
-  docType: { fontSize: 18, fontFamily: 'Helvetica-Bold', color: C.orange500, textAlign: 'right' },
-  docNum: { fontSize: 9, color: C.slate400, textAlign: 'right', marginTop: 4 },
-  docDate: { fontSize: 8, color: C.slate400, textAlign: 'right', marginTop: 2 },
+  docType: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: C.navy950, textAlign: 'right' },
+  docNum: { fontSize: 9, color: C.orange500, textAlign: 'right', marginTop: 4, fontFamily: 'Helvetica-Bold' },
+  docDate: { fontSize: 8, color: C.slate500, textAlign: 'right', marginTop: 2 },
 
-  // ── Stripe ───────────────────────────────────────────────────
-  stripe: { height: 4, backgroundColor: C.orange500 },
+  // ── Stripe — acento naranja delgado (mínima tinta) ──────────
+  stripe: { height: 3, backgroundColor: C.orange500 },
 
   // ── Body ─────────────────────────────────────────────────────
   body: { padding: '22 40 20 40' },
@@ -71,9 +78,14 @@ const s = StyleSheet.create({
   // ── Divider ──────────────────────────────────────────────────
   divider: { height: 1, backgroundColor: C.slate200, marginBottom: 14 },
 
-  // ── Table ────────────────────────────────────────────────────
-  tableHead: { flexDirection: 'row', backgroundColor: C.navy800, padding: '7 8' },
-  tableHeadCell: { fontSize: 7, color: C.white, textTransform: 'uppercase' },
+  // ── Table — cabecera con fondo muy suave, sin navy oscuro ────
+  tableHead: {
+    flexDirection: 'row',
+    backgroundColor: C.slate100,
+    padding: '7 8',
+    borderBottom: `1.5 solid ${C.navy600}`,
+  },
+  tableHeadCell: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: C.navy800, textTransform: 'uppercase' },
   tableRowEven: { flexDirection: 'row', padding: '5 8', backgroundColor: C.white },
   tableRowOdd: { flexDirection: 'row', padding: '5 8', backgroundColor: C.slate50 },
   tableCell: { fontSize: 8 },
@@ -84,19 +96,27 @@ const s = StyleSheet.create({
   totalRow: { flexDirection: 'row', marginBottom: 4 },
   totalLabel: { fontSize: 8, color: C.slate500, width: 100, textAlign: 'right', marginRight: 16 },
   totalValue: { fontSize: 8, width: 80, textAlign: 'right' },
-  totalDivider: { width: 196, height: 1, backgroundColor: C.slate200, marginBottom: 6 },
-  grandBox: { backgroundColor: C.navy950, borderRadius: 4, padding: '7 12', flexDirection: 'row', marginBottom: 4 },
-  grandLabel: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.white, width: 84, textAlign: 'right', marginRight: 16 },
+  totalDivider: { width: 196, height: 1, backgroundColor: C.slate300, marginBottom: 6 },
+  // Grand total: borde superior/inferior navy, fondo blanco — sin relleno oscuro
+  grandBox: {
+    borderTop: `1.5 solid ${C.navy950}`,
+    borderBottom: `1.5 solid ${C.navy950}`,
+    padding: '7 12',
+    flexDirection: 'row',
+    marginBottom: 4,
+    backgroundColor: C.white,
+  },
+  grandLabel: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.navy950, width: 84, textAlign: 'right', marginRight: 16 },
   grandValue: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.orange500, width: 80, textAlign: 'right' },
 
   // ── Notes ────────────────────────────────────────────────────
-  notesBox: { marginTop: 20, padding: '8 12', backgroundColor: C.slate50, borderLeft: `3 solid ${C.orange500}` },
+  notesBox: { marginTop: 20, padding: '8 12', backgroundColor: C.white, borderLeft: `3 solid ${C.orange500}`, borderTop: `1 solid ${C.slate200}`, borderBottom: `1 solid ${C.slate200}`, borderRight: `1 solid ${C.slate200}` },
   notesLabel: { fontSize: 7, color: C.slate400, textTransform: 'uppercase', marginBottom: 3 },
   notesText: { fontSize: 8, color: C.slate700 },
 
   // ── Footer ───────────────────────────────────────────────────
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  footerStripe: { height: 3, backgroundColor: C.orange500 },
+  footerStripe: { height: 2, backgroundColor: C.slate200 },
   footerText: { fontSize: 7, color: C.slate400, textAlign: 'center', paddingTop: 6, paddingBottom: 14 },
 });
 
