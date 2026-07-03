@@ -265,8 +265,12 @@ export const settingsRouter = createTRPCRouter({
         ein: true, merchantRegistration: true,
         _count: { select: { locations: true } },
         locations: {
-          include: { product: { select: { name: true, sku: true } } },
-          orderBy: { locationCode: 'asc' },
+          include: {
+            product: {
+              select: { name: true, sku: true, retailPrice: true, minStock: true },
+            },
+          },
+          orderBy: { product: { sku: 'asc' } },
         },
       },
       orderBy: { name: 'asc' },

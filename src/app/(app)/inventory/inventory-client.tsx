@@ -42,6 +42,7 @@ export function InventoryClient() {
   const [form, setForm] = useState<ProductForm>(emptyForm);
   const [error, setError] = useState('');
   const [showPrintMenu, setShowPrintMenu] = useState(false);
+  const [showByLocPrintMenu, setShowByLocPrintMenu] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [deactivateTarget, setDeactivateTarget] = useState<{ id: string; name: string } | null>(null);
@@ -184,6 +185,114 @@ export function InventoryClient() {
           <div class="item"><span class="val" style="color:#854D0E">${lowCount}</span><span class="label">Stock Bajo</span></div>
           <div class="item"><span class="val" style="color:#991B1B">${zeroCount}</span><span class="label">Sin Stock</span></div>
           <div class="item" style="margin-left:auto"><span class="val">$${totalRetail.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span><span class="label">Valor Inventario (Retail)</span></div>
+        </div>
+        <script>window.onload=()=>window.print()<\/script>
+      </body></html>`;
+
+      const win = window.open('', '_blank', 'width=1100,height=700');
+      if (win) { win.document.write(html); win.document.close(); }
+    } finally {
+      setPrinting(false);
+    }
+  }
+
+  function printByWarehouse(warehouseId?: string) {
+    if (!warehouses) return;
+    setShowByLocPrintMenu(false);
+    setPrinting(true);
+    try {
+      type Loc = {
+        id: string; locationCode: string; quantityOnHand: number; reservedQuantity: number;
+        productId: string; product: { name: string; sku: string; retailPrice: unknown; minStock: number };
+      };
+      const targets = warehouseId ? warehouses.filter(w => w.id === warehouseId) : warehouses;
+      const date = new Date().toLocaleDateString('es-PR', { year: 'numeric', month: 'long', day: 'numeric' });
+      const title = targets.length === 1 ? (targets[0]?.name ?? 'Sucursal') : 'Todas las Sucursales';
+
+      let totalSKUs = 0;
+      let totalUnits = 0;
+      let zeroCount = 0;
+      let totalRetailValue = 0;
+
+      const sections = targets.map(wh => {
+        const locs = (wh.locations as unknown as Loc[]).filter(l => l.quantityOnHand > 0 || true);
+        const whUnits = locs.reduce((s, l) => s + l.quantityOnHand, 0);
+        const whZero  = locs.filter(l => l.quantityOnHand === 0).length;
+        const whValue = locs.reduce((s, l) => s + Number(l.product.retailPrice) * l.quantityOnHand, 0);
+        totalSKUs  += locs.length;
+        totalUnits += whUnits;
+        zeroCount  += whZero;
+        totalRetailValue += whValue;
+
+        const whHeader = targets.length > 1
+          ? `<tr class="wh-hdr"><td colspan="7">${wh.name} &nbsp;·&nbsp; ${locs.length} SKUs &nbsp;·&nbsp; ${whUnits.toLocaleString()} unidades &nbsp;·&nbsp; $${whValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td></tr>`
+          : '';
+
+        const rows = locs.map((loc, i) => {
+          const st = loc.quantityOnHand === 0 ? 'crit' : 'ok';
+          return `<tr style="${i % 2 !== 0 ? 'background:#f8fafc' : ''}">
+            <td class="sku">${loc.product.sku}</td>
+            <td>${loc.product.name}</td>
+            <td class="center">${loc.locationCode}</td>
+            <td class="num st-${st}">${loc.quantityOnHand}</td>
+            <td class="num muted">${loc.reservedQuantity}</td>
+            <td class="num">${loc.quantityOnHand - loc.reservedQuantity}</td>
+            <td><span class="badge badge-${st}">${st === 'ok' ? 'Con Stock' : 'Sin Stock'}</span></td>
+          </tr>`;
+        }).join('');
+
+        return whHeader + rows;
+      }).join('');
+
+      const html = `<!DOCTYPE html><html><head>
+        <meta charset="utf-8">
+        <title>Inventario por Sucursal — ${title}</title>
+        <style>
+          *{margin:0;padding:0;box-sizing:border-box}
+          body{font-family:Arial,sans-serif;font-size:10.5px;color:#1e293b;padding:16px 20px}
+          .hdr{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0A1628;padding-bottom:10px;margin-bottom:12px}
+          .hdr h1{font-size:17px;font-weight:700;color:#0A1628;letter-spacing:-0.5px}
+          .hdr .sub{font-size:9.5px;color:#64748B;margin-top:3px}
+          .hdr .right{text-align:right;font-size:9.5px;color:#64748B}
+          table{width:100%;border-collapse:collapse}
+          th{background:#0A1628;color:#fff;padding:5px 8px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+          th.num,td.num,th.center,td.center{text-align:right}
+          td{padding:4.5px 8px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
+          tr.wh-hdr td{background:#EC6326!important;color:#fff;font-weight:700;font-size:10px;padding:6px 8px}
+          .sku{font-family:monospace;font-size:9.5px;color:#475569}
+          .muted{color:#94A3B8}
+          .st-ok{color:#166534;font-weight:700}
+          .st-crit{color:#991B1B;font-weight:700}
+          .badge{padding:1px 7px;border-radius:20px;font-size:8.5px;font-weight:600}
+          .badge-ok{background:#F0FDF4;color:#166534}
+          .badge-crit{background:#FEF2F2;color:#991B1B}
+          .totals{margin-top:14px;padding:10px 14px;background:#f1f5f9;border-radius:6px;display:flex;gap:28px;align-items:center}
+          .totals .item{font-size:9.5px;color:#64748B}
+          .totals .val{font-size:14px;font-weight:700;color:#0A1628;display:block}
+          .totals .label{font-size:9px;color:#94A3B8}
+          @media print{body{padding:10px 12px}th,.wh-hdr td{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+        </style>
+      </head><body>
+        <div class="hdr">
+          <div>
+            <h1>THE BUILDER'S HOUSE · Puerto Rico</h1>
+            <div class="sub">Inventario por Sucursal · ${title}</div>
+          </div>
+          <div class="right">Generado: ${date}<br>${totalSKUs} SKU(s)</div>
+        </div>
+        <table>
+          <thead><tr>
+            <th>SKU</th><th>Producto</th><th class="center">Ubicación</th>
+            <th class="num">Disponible</th><th class="num">Reservado</th><th class="num">Neto</th><th>Estado</th>
+          </tr></thead>
+          <tbody>${sections}</tbody>
+        </table>
+        <div class="totals">
+          <div class="item"><span class="val">${totalSKUs}</span><span class="label">Total SKUs</span></div>
+          <div class="item"><span class="val">${totalUnits.toLocaleString()}</span><span class="label">Unidades</span></div>
+          <div class="item"><span class="val" style="color:#991B1B">${zeroCount}</span><span class="label">Sin Stock</span></div>
+          <div class="item"><span class="val" style="color:#166534">${totalSKUs - zeroCount}</span><span class="label">Con Stock</span></div>
+          <div class="item" style="margin-left:auto"><span class="val">$${totalRetailValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</span><span class="label">Valor Retail</span></div>
         </div>
         <script>window.onload=()=>window.print()<\/script>
       </body></html>`;
@@ -362,6 +471,53 @@ export function InventoryClient() {
       {/* ── TAB: Stock por Sucursal ── */}
       {activeTab === 'by-location' && (
         <div className="space-y-4">
+          {/* Header row con botón imprimir */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm" style={{ color: '#64748B' }}>Stock actual por almacén</p>
+            <div className="relative">
+              <button
+                onClick={() => setShowByLocPrintMenu(m => !m)}
+                disabled={printing || !warehouses}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border hover:bg-slate-50 transition-colors disabled:opacity-50"
+                style={{ color: brand.navy[800], borderColor: '#E2E8F0', backgroundColor: 'white' }}
+              >
+                <Printer size={15} />
+                {printing ? 'Generando...' : 'Imprimir'}
+                <ChevronDown size={13} />
+              </button>
+              {showByLocPrintMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowByLocPrintMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-xl shadow-xl w-56 overflow-hidden">
+                    <div className="px-3 py-2 text-xs font-semibold text-slate-400 border-b border-slate-100 uppercase tracking-wide">
+                      Imprimir por Sucursal
+                    </div>
+                    <button
+                      onClick={() => printByWarehouse()}
+                      className="w-full flex items-center gap-2 px-4 py-2.5 text-sm hover:bg-slate-50 text-left font-medium"
+                      style={{ color: brand.navy[950] }}>
+                      <Printer size={13} style={{ color: brand.orange[500] }} />
+                      Todas las Sucursales
+                    </button>
+                    {warehouses && warehouses.length > 0 && (
+                      <>
+                        <div className="px-3 py-1.5 text-xs text-slate-400 border-t border-slate-100">Por sucursal</div>
+                        {warehouses.map(wh => (
+                          <button key={wh.id}
+                            onClick={() => printByWarehouse(wh.id)}
+                            className="w-full px-4 py-2 text-sm hover:bg-slate-50 text-left"
+                            style={{ color: brand.navy[800] }}>
+                            {wh.name}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
           {/* KPI cards */}
           {whSummary && (
             <div className="grid grid-cols-2 gap-4">
