@@ -17,9 +17,10 @@ const movementCreateSchema = z
   .object({
     productId: z.string().cuid(),
     // locationId OR warehouseId — warehouseId auto-crea la productLocation si no existe
-    locationId: z.string().cuid().optional(),
-    warehouseId: z.string().cuid().optional(),
-    destinationLocationId: z.string().cuid().optional(),
+    // .min(10) en lugar de .cuid() porque algunos location IDs legacy son UUID con guiones
+    locationId: z.string().min(10).optional(),
+    warehouseId: z.string().min(10).optional(),
+    destinationLocationId: z.string().min(10).optional(),
     movementType: z.enum(['IN', 'OUT', 'TRANSFER', 'ADJUSTMENT', 'RETURN', 'DAMAGE']),
     quantity: z.number().int().refine((n) => n !== 0, 'La cantidad no puede ser cero'),
     referenceType: z.enum(['INVOICE', 'PURCHASE_ORDER', 'ADJUSTMENT', 'TRANSFER', 'DAMAGE_REPORT', 'CYCLE_COUNT', 'DIRECT_RECEIPT']),

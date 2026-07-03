@@ -12,7 +12,7 @@ import { sendInvoiceEmail, type InvoiceEmailData } from '@/lib/email';
 // lo hace requerido cuando type === 'INVOICE' o 'CREDIT_NOTE'.
 const invoiceItemSchema = z.object({
   productId: z.string().cuid(),
-  locationId: z.string().cuid().optional(),
+  locationId: z.string().min(10).optional(), // min(10) acepta CUID y UUID legacy con guiones
   quantity: z.number().int().positive(),
   unitPrice: z.number().positive(),
   discountPercent: z.number().min(0).max(100).default(0),
@@ -1252,7 +1252,7 @@ export const invoicingRouter = createTRPCRouter({
           .array(
             z.object({
               productId: z.string().cuid(),
-              locationId: z.string().cuid(),
+              locationId: z.string().min(10), // min(10) acepta CUID y UUID legacy con guiones
               quantity: z.number().int().positive(),
               discountReason: z.string().min(1).optional(),
             })

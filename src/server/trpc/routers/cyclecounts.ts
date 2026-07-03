@@ -52,7 +52,7 @@ export const cycleCountsRouter = createTRPCRouter({
     .input(
       z.object({
         productId: z.string().cuid(),
-        locationId: z.string().cuid(),
+        locationId: z.string().min(10), // min(10) acepta CUID y UUID legacy con guiones
         assignedUserId: z.string().cuid(),
         scheduledDate: z.date(),
         notes: z.string().optional(),
