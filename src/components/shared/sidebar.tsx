@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState, useRef, useEffect } from 'react';
+import { signOut } from 'next-auth/react';
 import {
   LayoutDashboard, Package, ScanLine, Warehouse, Receipt,
   Users, Truck, BarChart3, Shield, Settings, ChevronDown,
   ShoppingCart, ClipboardCheck, ArrowLeftRight, PackagePlus,
-  SlidersHorizontal, RotateCcw, Landmark,
+  SlidersHorizontal, RotateCcw, Landmark, LogOut,
 } from 'lucide-react';
 import { Logo } from '@/components/brand/logo';
 import { brand } from '@/lib/brand';
@@ -78,6 +80,19 @@ function NavSection({ label }: { label: string }) {
 }
 
 export function Sidebar({ user }: { user: SidebarUser }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   const initials = user.name
     ? user.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
     : '??';
@@ -143,8 +158,36 @@ export function Sidebar({ user }: { user: SidebarUser }) {
       </nav>
 
       {/* Usuario */}
-      <div className="p-3 border-t" style={{ borderColor: brand.navy[800] }}>
-        <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/5 cursor-pointer">
+      <div className="p-3 border-t relative" style={{ borderColor: brand.navy[800] }} ref={menuRef}>
+        {/* Dropdown menu — aparece arriba del área de usuario */}
+        {menuOpen && (
+          <div
+            className="absolute bottom-full left-3 right-3 mb-1 rounded-lg overflow-hidden shadow-xl"
+            style={{
+              backgroundColor: brand.navy[800],
+              border: `1px solid rgba(255,255,255,0.08)`,
+            }}
+          >
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left transition-colors"
+              style={{ color: '#F87171' }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'rgba(248,113,113,0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+            >
+              <LogOut size={15} strokeWidth={2} />
+              <span className="font-medium">Cerrar sesión</span>
+            </button>
+          </div>
+        )}
+
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg transition-colors"
+          style={{ backgroundColor: menuOpen ? 'rgba(255,255,255,0.08)' : 'transparent' }}
+          onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'; }}
+          onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = 'transparent'; }}
+        >
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
             style={{
@@ -153,14 +196,21 @@ export function Sidebar({ user }: { user: SidebarUser }) {
           >
             {initials}
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 text-left">
             <div className="text-xs font-semibold text-white truncate">{user.name ?? 'Usuario'}</div>
             <div className="text-[11px] truncate" style={{ color: '#94A3B8' }}>
               {user.email}
             </div>
           </div>
-          <ChevronDown size={14} style={{ color: '#94A3B8' }} />
-        </div>
+          <ChevronDown
+            size={14}
+            style={{
+              color: '#94A3B8',
+              transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 150ms',
+            }}
+          />
+        </button>
       </div>
     </aside>
   );
