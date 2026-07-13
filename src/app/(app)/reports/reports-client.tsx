@@ -7,11 +7,9 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { glass } from '@/lib/ui';
 import {
   AreaChart, Area, BarChart, Bar,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
 import { TrendingUp, Package, DollarSign, Users, BarChart3, Layers, Download, ChevronLeft, ChevronRight, Building2, Clock } from 'lucide-react';
-
-const PIE_COLORS = [brand.orange[500], brand.navy[700], brand.orange[400], brand.navy[600], '#059669'];
 
 const MOV_LABELS: Record<string, string> = {
   IN: 'Entrada', OUT: 'Salida', TRANSFER: 'Transferencia',
@@ -61,7 +59,7 @@ export function ReportsClient() {
 
   const { data: kpis } = trpc.dashboard.kpis.useQuery();
   const { data: salesData } = trpc.dashboard.salesByDay.useQuery({ days: 30 });
-  const { data: catData } = trpc.dashboard.inventoryByCategory.useQuery();
+  const { data: topProductsData } = trpc.dashboard.topProducts.useQuery({ days: 30 });
 
   const { data: summary } = trpc.dashboard.reportSummary.useQuery();
   const { data: lowStockData } = trpc.products.lowStock.useQuery();
@@ -381,24 +379,40 @@ export function ReportsClient() {
           )}
         </div>
 
-        {/* Inventory by Category */}
+        {/* Top 10 Productos más vendidos */}
         <div style={glass} className="rounded-2xl p-5">
-          <h3 className="text-sm font-bold mb-4" style={{ color: brand.navy[950] }}>
-            Inventario por Categoría
-          </h3>
-          {catData && catData.length > 0 ? (
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-bold" style={{ color: brand.navy[950] }}>
+              Productos más Vendidos
+            </h3>
+            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#F1F5F9', color: '#64748B' }}>
+              Últimos 30 días
+            </span>
+          </div>
+          {topProductsData && topProductsData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={catData} dataKey="units" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
-                  {catData.map((_, i) => (
-                    <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => [Number(v), 'Unidades']} />
-              </PieChart>
+              <BarChart
+                data={topProductsData.map((p) => ({
+                  sku: p.sku.replace('VS-L4-', '').replace('VS-L3-', ''),
+                  unidades: p.unitsSold,
+                  revenue: p.revenue,
+                  fullName: p.name,
+                }))}
+                layout="vertical"
+                margin={{ left: 8, right: 16, top: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(10,22,40,0.06)" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 11, fill: '#94A3B8' }} tickFormatter={(v) => String(v)} />
+                <YAxis type="category" dataKey="sku" tick={{ fontSize: 10, fill: '#475569', fontFamily: 'monospace' }} width={90} />
+                <Tooltip
+                  formatter={(value, name) => name === 'unidades' ? [`${value} uds`, 'Unidades'] : [formatCurrency(Number(value)), 'Ingresos']}
+                  labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName ?? label}
+                />
+                <Bar dataKey="unidades" fill={brand.orange[500]} radius={[0, 4, 4, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyChart label="No hay datos de inventario" />
+            <EmptyChart label="No hay ventas en los últimos 30 días" />
           )}
         </div>
       </div>

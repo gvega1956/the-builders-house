@@ -199,6 +199,48 @@ export const dashboardRouter = createTRPCRouter({
     return result;
   }),
 
+  // Top 10 productos más vendidos por unidades en el período
+  topProducts: protectedProcedure
+    .input(
+      z.object({ days: z.number().int().min(1).max(365).default(30) }).optional()
+    )
+    .query(async ({ ctx, input }) => {
+      const days = input?.days ?? 30;
+      const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const rows = await ctx.db.$queryRaw<Array<{
+        id: string;
+        sku: string;
+        name: string;
+        units_sold: number;
+        revenue: number;
+      }>>`
+        SELECT
+          p.id,
+          p.sku,
+          p.name,
+          COALESCE(SUM(ii.quantity), 0)::int       AS units_sold,
+          COALESCE(SUM(ii."lineTotal"), 0)::float8  AS revenue
+        FROM products p
+        JOIN invoice_items ii ON ii."productId" = p.id
+        JOIN invoices inv ON inv.id = ii."invoiceId"
+          AND inv.type   = 'INVOICE'
+          AND inv.status IN ('PAID', 'PARTIAL', 'ISSUED')
+          AND inv."createdAt" >= ${from}
+        GROUP BY p.id, p.sku, p.name
+        ORDER BY units_sold DESC
+        LIMIT 10
+      `;
+
+      return rows.map((r) => ({
+        id: r.id,
+        sku: r.sku,
+        name: r.name,
+        unitsSold: r.units_sold,
+        revenue: r.revenue,
+      }));
+    }),
+
   // Facturas PENDING_AUTHORIZATION con antigüedad >24h — stock bloqueado sin resolver.
   pendingAuthAlerts: protectedProcedure.query(async ({ ctx }) => {
     const cutoff24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
