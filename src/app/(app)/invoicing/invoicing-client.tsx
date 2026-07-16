@@ -350,21 +350,21 @@ function InvoicePreview({
                 <Building2 size={15} className="text-white" />
               </div>
               <div>
-                <div className="font-black text-sm leading-none" style={{ color: brand.navy[950] }}>THE BUILDER&apos;S HOUSE</div>
+                <div className="font-black text-base leading-none" style={{ color: brand.navy[950] }}>THE BUILDER&apos;S HOUSE</div>
                 <div className="text-xs text-slate-400">Puerto Rico</div>
               </div>
             </div>
-            <div className="text-xs text-slate-400 mt-2 leading-relaxed">
+            <div className="text-sm text-slate-400 mt-2 leading-relaxed">
               info@thebuildershouse.pr<br />(787) 000-0000
             </div>
           </div>
           <div className="text-right">
-            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide mb-2"
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold uppercase tracking-wide mb-2"
               style={{ background: cfg.color + '18', color: cfg.color }}>{cfg.label}</span>
-            <div className="text-xs font-mono text-slate-400">#— {new Date().getFullYear()}</div>
-            <div className="text-xs text-slate-400 mt-0.5">{today}</div>
+            <div className="text-sm font-mono text-slate-400">#— {new Date().getFullYear()}</div>
+            <div className="text-sm text-slate-400 mt-0.5">{today}</div>
             {dueDate && (
-              <div className="text-xs text-slate-500 mt-0.5">
+              <div className="text-sm text-slate-500 mt-0.5">
                 Vence: {new Date(dueDate + 'T12:00:00').toLocaleDateString('es-PR')}
               </div>
             )}
@@ -376,20 +376,20 @@ function InvoicePreview({
           {customerName ? (
             <>
               <div className="text-xs font-semibold text-slate-400 mb-1">FACTURAR A</div>
-              <div className="font-semibold text-sm" style={{ color: brand.navy[900] }}>{customerName}</div>
+              <div className="font-semibold text-base" style={{ color: brand.navy[900] }}>{customerName}</div>
               {customerCode && (
-                <div className="text-xs text-slate-400">
+                <div className="text-sm text-slate-400">
                   {customerCode} · {customerType === 'WHOLESALE' ? 'Mayorista' : 'Detallista'}
                 </div>
               )}
             </>
           ) : (
-            <div className="text-xs text-slate-300 italic">Selecciona un cliente...</div>
+            <div className="text-sm text-slate-300 italic">Selecciona un cliente...</div>
           )}
         </div>
 
         {/* Line items */}
-        <table className="w-full text-xs mb-4">
+        <table className="w-full text-sm mb-4">
           <thead>
             <tr style={{ borderBottom: `2px solid ${brand.navy[950]}` }}>
               <th className="text-left py-1.5 font-semibold" style={{ color: brand.navy[900] }}>Descripción</th>
@@ -420,7 +420,7 @@ function InvoicePreview({
         </table>
 
         {/* Totals */}
-        <div className="ml-auto w-44 space-y-1 text-xs">
+        <div className="ml-auto w-44 space-y-1 text-sm">
           <div className="flex justify-between" style={{ color: '#64748B' }}>
             <span>Subtotal</span><span>{formatCurrency(subtotal)}</span>
           </div>
@@ -433,7 +433,7 @@ function InvoicePreview({
               <span>IVU</span><span>Exento</span>
             </div>
           )}
-          <div className="flex justify-between font-bold text-sm pt-1"
+          <div className="flex justify-between font-bold text-base pt-1"
             style={{ borderTop: `2px solid ${brand.navy[950]}`, color: brand.navy[950] }}>
             <span>TOTAL</span><span>{formatCurrency(total)}</span>
           </div>
@@ -442,7 +442,7 @@ function InvoicePreview({
         {notes && (
           <div className="mt-5 pt-3 border-t border-dashed border-slate-200">
             <div className="text-xs font-semibold text-slate-400 mb-1">NOTAS</div>
-            <p className="text-xs text-slate-500">{notes}</p>
+            <p className="text-sm text-slate-500">{notes}</p>
           </div>
         )}
 

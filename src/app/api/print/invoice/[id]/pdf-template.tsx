@@ -44,7 +44,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 const s = StyleSheet.create({
-  page: { fontFamily: 'Helvetica', fontSize: 9, color: C.navy950, backgroundColor: C.white },
+  page: { fontFamily: 'Helvetica', fontSize: 10, color: C.navy950, backgroundColor: C.white },
 
   // ── Header — blanco, acento naranja solo en texto y borde ────
   header: {
@@ -57,11 +57,11 @@ const s = StyleSheet.create({
   },
   brandRow: { flexDirection: 'row', alignItems: 'center' },
   brandText: { marginLeft: 12 },
-  brandName: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.navy950 },
-  brandSub: { fontSize: 7, color: C.orange500, marginTop: 3 },
-  docType: { fontSize: 20, fontFamily: 'Helvetica-Bold', color: C.navy950, textAlign: 'right' },
-  docNum: { fontSize: 9, color: C.orange500, textAlign: 'right', marginTop: 4, fontFamily: 'Helvetica-Bold' },
-  docDate: { fontSize: 8, color: C.slate500, textAlign: 'right', marginTop: 2 },
+  brandName: { fontSize: 15, fontFamily: 'Helvetica-Bold', color: C.navy950 },
+  brandSub: { fontSize: 8, color: C.orange500, marginTop: 3 },
+  docType: { fontSize: 22, fontFamily: 'Helvetica-Bold', color: C.navy950, textAlign: 'right' },
+  docNum: { fontSize: 11, color: C.orange500, textAlign: 'right', marginTop: 4, fontFamily: 'Helvetica-Bold' },
+  docDate: { fontSize: 10, color: C.slate500, textAlign: 'right', marginTop: 2 },
 
   // ── Stripe — acento naranja delgado (mínima tinta) ──────────
   stripe: { height: 3, backgroundColor: C.orange500 },
@@ -71,9 +71,9 @@ const s = StyleSheet.create({
 
   // ── Info section ─────────────────────────────────────────────
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18 },
-  infoLabel: { fontSize: 7, color: C.slate400, textTransform: 'uppercase', marginBottom: 4 },
-  infoName: { fontSize: 10, fontFamily: 'Helvetica-Bold', color: C.navy950 },
-  infoSub: { fontSize: 8, color: C.slate500, marginTop: 2 },
+  infoLabel: { fontSize: 9, color: C.slate400, textTransform: 'uppercase', marginBottom: 4 },
+  infoName: { fontSize: 12, fontFamily: 'Helvetica-Bold', color: C.navy950 },
+  infoSub: { fontSize: 10, color: C.slate500, marginTop: 2 },
 
   // ── Divider ──────────────────────────────────────────────────
   divider: { height: 1, backgroundColor: C.slate200, marginBottom: 14 },
@@ -85,17 +85,17 @@ const s = StyleSheet.create({
     padding: '7 8',
     borderBottom: `1.5 solid ${C.navy600}`,
   },
-  tableHeadCell: { fontSize: 7, fontFamily: 'Helvetica-Bold', color: C.navy800, textTransform: 'uppercase' },
+  tableHeadCell: { fontSize: 9, fontFamily: 'Helvetica-Bold', color: C.navy800, textTransform: 'uppercase' },
   tableRowEven: { flexDirection: 'row', padding: '5 8', backgroundColor: C.white },
   tableRowOdd: { flexDirection: 'row', padding: '5 8', backgroundColor: C.slate50 },
-  tableCell: { fontSize: 8 },
+  tableCell: { fontSize: 10 },
   tableDivider: { height: 1, backgroundColor: C.slate100 },
 
   // ── Totals ───────────────────────────────────────────────────
   totalsOuter: { alignItems: 'flex-end', marginTop: 18 },
   totalRow: { flexDirection: 'row', marginBottom: 4 },
-  totalLabel: { fontSize: 8, color: C.slate500, width: 100, textAlign: 'right', marginRight: 16 },
-  totalValue: { fontSize: 8, width: 80, textAlign: 'right' },
+  totalLabel: { fontSize: 10, color: C.slate500, width: 100, textAlign: 'right', marginRight: 16 },
+  totalValue: { fontSize: 10, width: 80, textAlign: 'right' },
   totalDivider: { width: 196, height: 1, backgroundColor: C.slate300, marginBottom: 6 },
   // Grand total: borde superior/inferior navy, fondo blanco — sin relleno oscuro
   grandBox: {
@@ -106,18 +106,18 @@ const s = StyleSheet.create({
     marginBottom: 4,
     backgroundColor: C.white,
   },
-  grandLabel: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.navy950, width: 84, textAlign: 'right', marginRight: 16 },
-  grandValue: { fontSize: 11, fontFamily: 'Helvetica-Bold', color: C.orange500, width: 80, textAlign: 'right' },
+  grandLabel: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.navy950, width: 84, textAlign: 'right', marginRight: 16 },
+  grandValue: { fontSize: 13, fontFamily: 'Helvetica-Bold', color: C.orange500, width: 80, textAlign: 'right' },
 
   // ── Notes ────────────────────────────────────────────────────
   notesBox: { marginTop: 20, padding: '8 12', backgroundColor: C.white, borderLeft: `3 solid ${C.orange500}`, borderTop: `1 solid ${C.slate200}`, borderBottom: `1 solid ${C.slate200}`, borderRight: `1 solid ${C.slate200}` },
-  notesLabel: { fontSize: 7, color: C.slate400, textTransform: 'uppercase', marginBottom: 3 },
-  notesText: { fontSize: 8, color: C.slate700 },
+  notesLabel: { fontSize: 8, color: C.slate400, textTransform: 'uppercase', marginBottom: 3 },
+  notesText: { fontSize: 9, color: C.slate700 },
 
   // ── Footer ───────────────────────────────────────────────────
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0 },
   footerStripe: { height: 2, backgroundColor: C.slate200 },
-  footerText: { fontSize: 7, color: C.slate400, textAlign: 'center', paddingTop: 6, paddingBottom: 14 },
+  footerText: { fontSize: 8, color: C.slate400, textAlign: 'center', paddingTop: 6, paddingBottom: 14 },
 });
 
 // Logo SVG reproducido desde src/components/brand/logo.tsx
@@ -215,13 +215,13 @@ export function InvoicePdf({ invoice }: { invoice: InvoiceData }) {
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={s.infoLabel}>Estado</Text>
-              <Text style={{ fontSize: 9, fontFamily: 'Helvetica-Bold', color: statusColor }}>
+              <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', color: statusColor }}>
                 {statusLabel}
               </Text>
               {invoice.dueDate ? (
                 <View style={{ marginTop: 10 }}>
                   <Text style={[s.infoLabel, { textAlign: 'right' }]}>Vencimiento</Text>
-                  <Text style={{ fontSize: 9, color: C.slate700, textAlign: 'right' }}>
+                  <Text style={{ fontSize: 11, color: C.slate700, textAlign: 'right' }}>
                     {new Date(invoice.dueDate).toLocaleDateString('es-PR', { day: '2-digit', month: 'long', year: 'numeric' })}
                   </Text>
                 </View>
