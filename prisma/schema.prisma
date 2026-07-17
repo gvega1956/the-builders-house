@@ -234,6 +234,7 @@ model Supplier {
 model Warehouse {
   id                   String    @id @default(cuid())
   name                 String    @unique
+  prefix               String?   @unique
   address              String?
   legalName            String?
   displayName          String?

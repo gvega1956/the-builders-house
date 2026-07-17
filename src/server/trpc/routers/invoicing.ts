@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createTRPCRouter, protectedProcedure, managerProcedure } from '@/server/trpc';
 import { TRPCError } from '@trpc/server';
 import { Prisma } from '@prisma/client';
-import { getNextSequenceValue } from '@/lib/sequences';
+import { getNextSequenceValue, getNextDocumentNumber } from '@/lib/sequences';
 import { toDecimal } from '@/lib/money';
 import { calculateAvailableStock } from '@/lib/inventory';
 import { detectInvoiceVoidAnomalies, detectInvoiceCreateAnomalies } from '@/lib/anomaly-detector';
@@ -272,7 +272,7 @@ export const invoicingRouter = createTRPCRouter({
             });
           }
 
-          const invoiceNumber = await getNextSequenceValue(tx, 'CREDIT_NOTE');
+          const invoiceNumber = await getNextDocumentNumber(tx, 'CREDIT_NOTE', rest.branchId);
           const invoiceItemsData = itemsData.map((d, idx) => ({
             ...d,
             locationId: items[idx]!.locationId,
@@ -383,7 +383,7 @@ export const invoicingRouter = createTRPCRouter({
       // ── QUOTE: sin movimientos ni reservas ────────────────────────────────
       if (type === 'QUOTE') {
         return ctx.db.$transaction(async (tx) => {
-          const invoiceNumber = await getNextSequenceValue(tx, 'QUOTE');
+          const invoiceNumber = await getNextDocumentNumber(tx, 'QUOTE', rest.branchId);
           const created = await tx.invoice.create({
             data: {
               ...rest,
@@ -471,7 +471,7 @@ export const invoicingRouter = createTRPCRouter({
         }
 
         const hasShortage = shortages.length > 0;
-        const invoiceNumber = await getNextSequenceValue(tx, 'INVOICE');
+        const invoiceNumber = await getNextDocumentNumber(tx, 'INVOICE', rest.branchId);
 
         // 4a. VENDOR con stock insuficiente → PENDING_AUTHORIZATION
         if (hasShortage && !canOverrideStock) {
@@ -1426,7 +1426,7 @@ export const invoicingRouter = createTRPCRouter({
         }
 
         const hasShortage = shortages.length > 0;
-        const invoiceNumber = await getNextSequenceValue(tx, 'INVOICE');
+        const invoiceNumber = await getNextDocumentNumber(tx, 'INVOICE', quote.branchId);
         const invoiceStatus =
           hasShortage && !canOverrideStock ? 'PENDING_AUTHORIZATION' : 'ISSUED';
 

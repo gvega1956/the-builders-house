@@ -8,6 +8,73 @@ type SequenceRow = {
 };
 
 /**
+ * Genera el siguiente número de documento con prefijo de sucursal cuando se indica.
+ *
+ * - Con branchId: busca `warehouses.prefix` y devuelve `{PREFIX}-{5_DIGITS}`.
+ *   Si la sucursal no tiene prefijo configurado, lanza BAD_REQUEST.
+ * - Sin branchId (o null): usa el prefijo de la secuencia ('FAC-', 'COT-', etc.)
+ *   para compatibilidad con documentos históricos sin sucursal.
+ *
+ * El incremento de la secuencia siempre ocurre dentro de la misma transacción.
+ * Un rollback revierte el contador (sin gaps permanentes).
+ */
+export async function getNextDocumentNumber(
+  tx: Prisma.TransactionClient,
+  name: string,
+  branchId?: string | null,
+): Promise<string> {
+  // Validar prefijo de sucursal ANTES de incrementar para evitar incrementos desperdiciados
+  let branchPrefix: string | null = null;
+  if (branchId) {
+    const warehouse = await tx.warehouse.findUnique({
+      where: { id: branchId },
+      select: { name: true, prefix: true },
+    });
+
+    if (!warehouse) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `Sucursal '${branchId}' no encontrada.`,
+      });
+    }
+
+    if (!warehouse.prefix) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Sucursal '${warehouse.name}' no tiene código de prefijo asignado. Configúralo en Ajustes → Sucursales.`,
+      });
+    }
+
+    branchPrefix = warehouse.prefix;
+  }
+
+  const rows = await tx.$queryRaw<SequenceRow[]>`
+    UPDATE sequences
+    SET    "currentValue" = "currentValue" + 1,
+           "updatedAt"    = NOW()
+    WHERE  name = ${name}
+    RETURNING prefix, "currentValue", padding
+  `;
+
+  if (rows.length === 0) {
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Secuencia '${name}' no encontrada. ¿Corriste el seed de la base de datos?`,
+    });
+  }
+
+  const row = rows[0]!;
+  const padded = String(row.currentValue).padStart(row.padding, '0');
+
+  if (branchPrefix) {
+    return `${branchPrefix}-${padded}`;
+  }
+
+  // Fallback: prefijo de la secuencia (compatibilidad con documentos sin sucursal)
+  return `${row.prefix}${padded}`;
+}
+
+/**
  * Incrementa atómicamente la secuencia y devuelve el número formateado.
  * Debe llamarse SIEMPRE dentro de un $transaction activo.
  *

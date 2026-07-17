@@ -75,7 +75,7 @@ beforeAll(async () => {
   });
   catId = cat.id;
 
-  const wh = await db.warehouse.create({ data: { name: 'TEST-INVOICING-BUG21-WH' } });
+  const wh = await db.warehouse.create({ data: { name: 'TEST-INVOICING-BUG21-WH', prefix: 'TS' } });
   whId = wh.id;
 
   const vendor = await db.user.create({
@@ -472,6 +472,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quote = await vendor.create({
         customerId,
         type: 'QUOTE',
+        branchId: whId,
         items: [{ productId, locationId, quantity: 5, unitPrice: 75, discountPercent: 10 }],
         taxRate: 0.08,
         dueDate: new Date('2026-12-31'),
@@ -485,7 +486,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
 
       expect(newInvoice.type).toBe('INVOICE');
       expect(newInvoice.status).toBe('ISSUED');
-      expect(newInvoice.invoiceNumber).toMatch(/^FAC-/);
+      expect(newInvoice.invoiceNumber).toMatch(/^TS-/);
       expect(newInvoice.sourceQuoteId).toBe(quote.id);
       expect(newInvoice.dueDate).toBeNull();
       // taxRate must be current PR IVU (0.115), NOT the quote's 0.08
@@ -516,6 +517,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quote = await vendor.create({
         customerId,
         type: 'QUOTE',
+        branchId: whId,
         items: [{ productId, locationId, quantity: 2, unitPrice: 100 }],
         taxRate: 0.115,
       });
@@ -537,6 +539,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quote = await vendor.create({
         customerId,
         type: 'QUOTE',
+        branchId: whId,
         items: [{ productId, locationId, quantity: 2, unitPrice: 100 }],
         taxRate: 0.115,
       });
@@ -571,6 +574,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quote = await vendor.create({
         customerId,
         type: 'QUOTE',
+        branchId: whId,
         items: [{ productId, locationId, quantity: 3, unitPrice: 100 }],
         taxRate: 0.115,
       });
@@ -604,6 +608,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quote = await vendor.create({
         customerId,
         type: 'QUOTE',
+        branchId: whId,
         items: [{ productId, locationId, quantity: 1, unitPrice: 100 }],
         taxRate: 0.115,
       });
@@ -622,6 +627,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       const quote = await vendor.create({
         customerId,
         type: 'QUOTE',
+        branchId: whId,
         items: [{ productId, locationId, quantity: 2, unitPrice: 100 }],
         taxRate: 0.115,
       });
@@ -640,7 +646,7 @@ describe('Bug 2.1 — Factura descuenta inventario', () => {
       expect(failures).toHaveLength(1);
 
       const winner = (successes[0] as PromiseFulfilledResult<typeof r1 extends PromiseFulfilledResult<infer T> ? T : never>).value;
-      expect((winner as { invoiceNumber: string }).invoiceNumber).toMatch(/^FAC-/);
+      expect((winner as { invoiceNumber: string }).invoiceNumber).toMatch(/^TS-/);
 
       // Error message must include the winning invoice number (Regla 4 message)
       const loserErr = (failures[0] as PromiseRejectedResult).reason as Error;
